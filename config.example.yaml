@@ -1,0 +1,40 @@
+# Конфигурация not-jira
+
+telegram:
+  # Токен вашего бота от @BotFather (обязательно)
+  token: "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+
+  # SOCKS5 или HTTP прокси для обхода блокировок Telegram API
+  # На роутере с ByeDPI укажите socks5://127.0.0.1:1080
+  # Если прокси не нужен, оставьте пустым ""
+  proxy_url: "socks5://127.0.0.1:1080"
+
+  # Telegram User ID администраторов бота (кому разрешено создавать и редактировать задачи)
+  admin_ids:
+    - 123456789
+
+  # ID топиков форума в супергруппе (@nonForum)
+  # Сообщения в этих топиках будут автоматически помечаться как Баг или Идея
+  bugs_topic_id: 101    # ID топика "Баги" (префикс задач: B0, B1...)
+  ideas_topic_id: 102   # ID топика "Идеи" (префикс задач: I0, I1...)
+
+database:
+  # Путь к файлу базы данных SQLite (Pure-Go, без CGO)
+  path: "bot.db"
+
+ai:
+  # Включить автоматическое сжатие сообщений через нейросеть
+  # Если false — админу в ЛС будет отправляться пошаговая форма ввода
+  enabled: false
+
+  # OpenAI-совместимый эндпоинт (Mistral, Groq, OpenRouter, DeepSeek и др.)
+  base_url: "https://api.mistral.ai/v1"
+
+  # API ключ
+  api_key: "your_mistral_api_key_here"
+
+  # Модель (например, mistral-small-latest, open-mistral-7b, llama-3.1-8b-instant)
+  model: "mistral-small-latest"
+
+  # Направлять ли запросы к AI через тот же прокси (помогает обойти блокировки РФ)
+  use_proxy: true

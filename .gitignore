@@ -1,0 +1,41 @@
+# Binaries and build artifacts
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+not-jira
+yatodobot
+
+# SQLite database files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+bot.db
+
+# Sensitive local configurations
+config.yaml
+config.yml
+.env
+*.local.yaml
+
+# IDE and Editor files
+.idea/
+.vscode/
+*.swp
+*~
+*.sublime-project
+*.sublime-workspace
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test and profiling artifacts
+*.out
+*.test
+*.prof
+coverage.html
