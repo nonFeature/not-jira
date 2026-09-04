@@ -5,26 +5,71 @@ import (
 	"html"
 	"strings"
 
+	"not-jira/internal/emoji"
+	"not-jira/internal/locales"
 	"not-jira/internal/models"
 )
 
-func RenderTaskCard(task *models.Task) string {
+func TaskTypeEmoji(t models.TaskType) string {
+	if t == models.TaskTypeIdea {
+		return emoji.Idea()
+	}
+	return emoji.Bug()
+}
+
+func TaskTypeName(t models.TaskType, l *locales.Bundle) string {
+	if t == models.TaskTypeIdea {
+		return l.Task.TypeIdea
+	}
+	return l.Task.TypeBug
+}
+
+func TaskStatusEmoji(s models.TaskStatus) string {
+	switch s {
+	case models.StatusNew:
+		return emoji.New()
+	case models.StatusInProgress:
+		return emoji.Gear()
+	case models.StatusDone:
+		return emoji.Check()
+	case models.StatusRejected:
+		return emoji.Cross()
+	default:
+		return "❓"
+	}
+}
+
+func TaskStatusName(s models.TaskStatus, l *locales.Bundle) string {
+	switch s {
+	case models.StatusNew:
+		return l.Task.StatusNew
+	case models.StatusInProgress:
+		return l.Task.StatusProgress
+	case models.StatusDone:
+		return l.Task.StatusDone
+	case models.StatusRejected:
+		return l.Task.StatusRejected
+	default:
+		return string(s)
+	}
+}
+
+func RenderTaskCard(task *models.Task, l *locales.Bundle) string {
 	var sb strings.Builder
 
-	// Header: [B0] 🐛 Баг: Заголовок
-	sb.WriteString(fmt.Sprintf("<b>[%s]</b> %s <b>%s: %s</b>\n\n",
-		task.ID, task.Type.Emoji(), task.Type.Russian(), html.EscapeString(task.Title)))
+	// Header: [B0] 🐛 Bug/Баг: Title
+	sb.WriteString(fmt.Sprintf(l.Task.Header,
+		task.ID, TaskTypeEmoji(task.Type), TaskTypeName(task.Type, l), html.EscapeString(task.Title)))
 
 	// Status & Metadata
-	sb.WriteString(fmt.Sprintf("<b>Статус:</b> %s %s\n", task.Status.Emoji(), task.Status.Russian()))
+	sb.WriteString(fmt.Sprintf(l.Task.StatusLabel, TaskStatusEmoji(task.Status), TaskStatusName(task.Status, l)))
 	if task.AuthorUsername != "" {
-		sb.WriteString(fmt.Sprintf("<b>Автор:</b> @%s\n", html.EscapeString(task.AuthorUsername)))
+		sb.WriteString(fmt.Sprintf(l.Task.AuthorLabel, html.EscapeString(task.AuthorUsername)))
 	}
-	sb.WriteString(fmt.Sprintf("<b>Создано:</b> %s UTC\n\n", task.CreatedAt.Format("02.01.2006 15:04")))
+	sb.WriteString(fmt.Sprintf(l.Task.CreatedLabel, task.CreatedAt.Format("02.01.2006 15:04")))
 
 	// Description inside an expandable blockquote (Bot API 7.x)
-	sb.WriteString("<b>Описание:</b>\n")
-	sb.WriteString(fmt.Sprintf("<blockquote expandable>%s</blockquote>\n\n", html.EscapeString(task.Description)))
+	sb.WriteString(fmt.Sprintf(l.Task.DescLabel, html.EscapeString(task.Description)))
 
 	// Subtasks (if any)
 	if len(task.Subtasks) > 0 {
@@ -34,11 +79,11 @@ func RenderTaskCard(task *models.Task) string {
 				doneCount++
 			}
 		}
-		sb.WriteString(fmt.Sprintf("<b>Подзадачи (%d/%d):</b>\n", doneCount, len(task.Subtasks)))
+		sb.WriteString(fmt.Sprintf(l.Task.SubtasksLabel, doneCount, len(task.Subtasks)))
 		for _, s := range task.Subtasks {
-			check := "⬜️"
+			check := emoji.SubEmpty()
 			if s.IsDone {
-				check = "☑️"
+				check = emoji.SubDone()
 			}
 			sb.WriteString(fmt.Sprintf("%s %s\n", check, html.EscapeString(s.Title)))
 		}
@@ -47,14 +92,15 @@ func RenderTaskCard(task *models.Task) string {
 
 	// Comments (if any)
 	if len(task.Comments) > 0 {
-		sb.WriteString(fmt.Sprintf("<b>Комментарии (%d):</b>\n", len(task.Comments)))
+		sb.WriteString(fmt.Sprintf(l.Task.CommentsLabel, len(task.Comments)))
 		// Show up to 5 last comments
 		start := 0
 		if len(task.Comments) > 5 {
 			start = len(task.Comments) - 5
 		}
+		commentIcon := emoji.Messages()
 		for _, c := range task.Comments[start:] {
-			sb.WriteString(fmt.Sprintf("💬 <i>%s</i>: %s\n", html.EscapeString(c.AuthorName), html.EscapeString(c.Text)))
+			sb.WriteString(fmt.Sprintf("%s <i>%s</i>: %s\n", commentIcon, html.EscapeString(c.AuthorName), html.EscapeString(c.Text)))
 		}
 		sb.WriteString("\n")
 	}
@@ -62,19 +108,19 @@ func RenderTaskCard(task *models.Task) string {
 	return sb.String()
 }
 
-func RenderTaskListHeader(totalCount int, filterType, filterStatus string) string {
-	typeDesc := "Все типы"
+func RenderTaskListHeader(totalCount int, filterType, filterStatus string, l *locales.Bundle) string {
+	typeDesc := l.Filters.AllTypes
 	if filterType == "BUG" {
-		typeDesc = "🐛 Баги"
+		typeDesc = l.Filters.Bugs
 	} else if filterType == "IDEA" {
-		typeDesc = "💡 Идеи"
+		typeDesc = l.Filters.Ideas
 	}
 
-	statusDesc := "Все статусы"
+	statusDesc := l.Filters.AllStatuses
 	if filterStatus != "ALL" {
-		statusDesc = models.TaskStatus(filterStatus).Emoji() + " " + models.TaskStatus(filterStatus).Russian()
+		s := models.TaskStatus(filterStatus)
+		statusDesc = TaskStatusEmoji(s) + " " + TaskStatusName(s, l)
 	}
 
-	return fmt.Sprintf("📋 <b>Список задач (%d)</b>\nФильтр: <code>%s</code> | <code>%s</code>\n\nВыберите задачу для просмотра или редактирования:",
-		totalCount, typeDesc, statusDesc)
+	return fmt.Sprintf(l.View.ListHeader, totalCount, typeDesc, statusDesc)
 }

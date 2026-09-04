@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"not-jira/internal/config"
+	"not-jira/internal/locales"
 	"not-jira/internal/models"
 	"not-jira/internal/storage"
 
@@ -35,16 +36,18 @@ func NewViewHandler(bot *telego.Bot, botUsername string, cfg *config.Config, sto
 func (h *ViewHandler) HandleList(ctx context.Context, msg *telego.Message) {
 	// Always send the list strictly to the user's private messages
 	targetChatID := msg.From.ID
-	h.renderList(ctx, targetChatID, 0, "ALL", "ALL", 0, msg)
+	l := locales.ForUser(msg.From.LanguageCode)
+	h.renderList(ctx, targetChatID, 0, "ALL", "ALL", 0, msg, l)
 }
 
 func (h *ViewHandler) HandleView(ctx context.Context, msg *telego.Message) {
 	// Always send task card strictly to the user's private messages
 	targetChatID := msg.From.ID
+	l := locales.ForUser(msg.From.LanguageCode)
 	parts := strings.Fields(msg.Text)
 	if len(parts) < 2 {
-		reply := tu.Message(tu.ID(targetChatID), "ℹ️ Использование: <code>/view B0</code> или <code>/view I1</code>").WithParseMode(telego.ModeHTML)
-		_, err := h.bot.SendMessage(reply)
+		reply := tu.Message(tu.ID(targetChatID), l.View.UsageHint).WithParseMode(telego.ModeHTML)
+		_, err := SendMessageSafe(h.bot, reply)
 		if err != nil && msg.Chat.ID != msg.From.ID {
 			PromptStartInDM(h.bot, h.botUsername, msg)
 		}
@@ -52,11 +55,12 @@ func (h *ViewHandler) HandleView(ctx context.Context, msg *telego.Message) {
 	}
 
 	taskID := strings.ToUpper(strings.TrimSpace(parts[1]))
-	h.renderTask(ctx, targetChatID, 0, taskID, msg.From.ID, msg)
+	h.renderTask(ctx, targetChatID, 0, taskID, msg.From.ID, msg, l)
 }
 
 func (h *ViewHandler) HandleCallback(ctx context.Context, query *telego.CallbackQuery) {
 	data := query.Data
+	l := locales.ForUser(query.From.LanguageCode)
 
 	if data == "noop" {
 		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID))
@@ -72,7 +76,7 @@ func (h *ViewHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			page, _ := strconv.Atoi(parts[3])
 			chatID := query.Message.GetChat().ID
 			msgID := query.Message.GetMessageID()
-			h.renderList(ctx, chatID, msgID, filterType, filterStatus, page, nil)
+			h.renderList(ctx, chatID, msgID, filterType, filterStatus, page, nil, l)
 		}
 		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID))
 		return
@@ -83,13 +87,13 @@ func (h *ViewHandler) HandleCallback(ctx context.Context, query *telego.Callback
 		taskID := strings.TrimPrefix(data, "view:")
 		chatID := query.Message.GetChat().ID
 		msgID := query.Message.GetMessageID()
-		h.renderTask(ctx, chatID, msgID, taskID, query.From.ID, nil)
+		h.renderTask(ctx, chatID, msgID, taskID, query.From.ID, nil, l)
 		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID))
 		return
 	}
 }
 
-func (h *ViewHandler) renderList(ctx context.Context, chatID int64, editMsgID int, filterType, filterStatus string, page int, originMsg *telego.Message) {
+func (h *ViewHandler) renderList(ctx context.Context, chatID int64, editMsgID int, filterType, filterStatus string, page int, originMsg *telego.Message, l *locales.Bundle) {
 	var filter storage.TaskFilter
 	if filterType != "ALL" {
 		t := models.TaskType(filterType)
@@ -103,7 +107,7 @@ func (h *ViewHandler) renderList(ctx context.Context, chatID int64, editMsgID in
 	offset := page * PageSize
 	tasks, totalCount, err := h.storage.ListTasks(ctx, filter, offset, PageSize)
 	if err != nil {
-		_, _ = h.bot.SendMessage(tu.Message(tu.ID(chatID), fmt.Sprintf("❌ Ошибка получения задач: %v", err)))
+		_, _ = SendMessageSafe(h.bot, tu.Message(tu.ID(chatID), fmt.Sprintf("❌ Error: %v", err)))
 		return
 	}
 
@@ -112,8 +116,8 @@ func (h *ViewHandler) renderList(ctx context.Context, chatID int64, editMsgID in
 		totalPages = 1
 	}
 
-	header := RenderTaskListHeader(totalCount, filterType, filterStatus)
-	kb := BuildListKeyboard(tasks, filterType, filterStatus, page, totalPages)
+	header := RenderTaskListHeader(totalCount, filterType, filterStatus, l)
+	kb := BuildListKeyboard(tasks, filterType, filterStatus, page, totalPages, l)
 
 	if editMsgID != 0 {
 		editMsg := &telego.EditMessageTextParams{
@@ -123,23 +127,23 @@ func (h *ViewHandler) renderList(ctx context.Context, chatID int64, editMsgID in
 			ParseMode:   telego.ModeHTML,
 			ReplyMarkup: kb,
 		}
-		_, err = h.bot.EditMessageText(editMsg)
+		_, err = EditMessageTextSafe(h.bot, editMsg)
 		if err == nil {
 			return
 		}
 	}
 
 	msg := tu.Message(tu.ID(chatID), header).WithParseMode(telego.ModeHTML).WithReplyMarkup(kb)
-	_, err = h.bot.SendMessage(msg)
+	_, err = SendMessageSafe(h.bot, msg)
 	if err != nil && originMsg != nil && originMsg.Chat.ID != originMsg.From.ID {
 		PromptStartInDM(h.bot, h.botUsername, originMsg)
 	}
 }
 
-func (h *ViewHandler) renderTask(ctx context.Context, chatID int64, editMsgID int, taskID string, userID int64, originMsg *telego.Message) {
+func (h *ViewHandler) renderTask(ctx context.Context, chatID int64, editMsgID int, taskID string, userID int64, originMsg *telego.Message, l *locales.Bundle) {
 	task, err := h.storage.GetTask(ctx, taskID)
 	if err != nil || task == nil {
-		_, err := h.bot.SendMessage(tu.Message(tu.ID(chatID), fmt.Sprintf("❌ Задача <code>%s</code> не найдена.", taskID)).WithParseMode(telego.ModeHTML))
+		_, err := SendMessageSafe(h.bot, tu.Message(tu.ID(chatID), fmt.Sprintf(l.View.NotFound, taskID)).WithParseMode(telego.ModeHTML))
 		if err != nil && originMsg != nil && originMsg.Chat.ID != originMsg.From.ID {
 			PromptStartInDM(h.bot, h.botUsername, originMsg)
 		}
@@ -147,8 +151,8 @@ func (h *ViewHandler) renderTask(ctx context.Context, chatID int64, editMsgID in
 	}
 
 	isAdmin := h.cfg.Telegram.IsAdmin(userID)
-	cardHTML := RenderTaskCard(task)
-	kb := BuildTaskInlineKeyboard(task, isAdmin)
+	cardHTML := RenderTaskCard(task, l)
+	kb := BuildTaskInlineKeyboard(task, isAdmin, l)
 
 	if editMsgID != 0 {
 		editMsg := &telego.EditMessageTextParams{
@@ -158,14 +162,14 @@ func (h *ViewHandler) renderTask(ctx context.Context, chatID int64, editMsgID in
 			ParseMode:   telego.ModeHTML,
 			ReplyMarkup: kb,
 		}
-		_, err = h.bot.EditMessageText(editMsg)
+		_, err = EditMessageTextSafe(h.bot, editMsg)
 		if err == nil {
 			return
 		}
 	}
 
 	msg := tu.Message(tu.ID(chatID), cardHTML).WithParseMode(telego.ModeHTML).WithReplyMarkup(kb)
-	_, err = h.bot.SendMessage(msg)
+	_, err = SendMessageSafe(h.bot, msg)
 	if err != nil && originMsg != nil && originMsg.Chat.ID != originMsg.From.ID {
 		PromptStartInDM(h.bot, h.botUsername, originMsg)
 	}

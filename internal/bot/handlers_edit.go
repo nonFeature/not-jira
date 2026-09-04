@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"not-jira/internal/config"
+	"not-jira/internal/locales"
 	"not-jira/internal/models"
 	"not-jira/internal/storage"
 
@@ -36,6 +37,7 @@ func NewEditHandler(bot *telego.Bot, cfg *config.Config, storage storage.Storage
 func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.CallbackQuery) {
 	data := query.Data
 	userID := query.From.ID
+	l := locales.ForUser(query.From.LanguageCode)
 	isAdmin := h.cfg.Telegram.IsAdmin(userID)
 
 	if strings.HasPrefix(data, "set_status:") {
@@ -45,7 +47,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 		if !isAdmin {
-			_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText("⛔️ Менять статус могут только администраторы").WithShowAlert())
+			_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText(l.Common.AdminOnly).WithShowAlert())
 			return
 		}
 
@@ -54,18 +56,18 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 
 		task, err := h.storage.GetTask(ctx, taskID)
 		if err != nil || task == nil {
-			_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText("❌ Задача не найдена"))
+			_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText(fmt.Sprintf(l.View.NotFound, taskID)))
 			return
 		}
 
 		oldStatus := task.Status
 		task.Status = newStatus
 		if err := h.storage.UpdateTask(ctx, task); err != nil {
-			_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText("❌ Ошибка обновления статуса"))
+			_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText("❌ Status update error"))
 			return
 		}
 
-		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText(fmt.Sprintf("Статус изменен: %s %s", newStatus.Emoji(), newStatus.Russian())))
+		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText(fmt.Sprintf(l.Edit.StatusChangedAlert, TaskStatusEmoji(newStatus), TaskStatusName(newStatus, l))))
 
 		// Notify topic & author if status changed
 		if oldStatus != newStatus {
@@ -73,7 +75,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 		}
 
 		// Update the current message card
-		h.updateMessageCard(query.Message.GetChat().ID, query.Message.GetMessageID(), task, isAdmin)
+		h.updateMessageCard(query.Message.GetChat().ID, query.Message.GetMessageID(), task, isAdmin, l)
 		return
 	}
 
@@ -88,7 +90,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 
 		_, err := h.storage.ToggleSubtask(ctx, subID)
 		if err != nil {
-			_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText("❌ Ошибка переключения"))
+			_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText("❌ Toggle error"))
 			return
 		}
 
@@ -96,14 +98,14 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 
 		task, _ := h.storage.GetTask(ctx, taskID)
 		if task != nil {
-			h.updateMessageCard(query.Message.GetChat().ID, query.Message.GetMessageID(), task, isAdmin)
+			h.updateMessageCard(query.Message.GetChat().ID, query.Message.GetMessageID(), task, isAdmin, l)
 		}
 		return
 	}
 
-	// GitHub Issues style edit actions
+	// GitHub Issues edit actions
 	if !isAdmin {
-		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText("⛔️ Только для администраторов").WithShowAlert())
+		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText(l.Common.AdminOnly).WithShowAlert())
 		return
 	}
 
@@ -114,7 +116,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			TaskID: taskID,
 		})
 		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID))
-		_, _ = h.bot.SendMessage(tu.Message(tu.ID(userID), fmt.Sprintf("✏️ Введите новый <b>заголовок</b> для задачи <code>[%s]</code>:", taskID)).WithParseMode(telego.ModeHTML))
+		_, _ = SendMessageSafe(h.bot, tu.Message(tu.ID(userID), fmt.Sprintf(l.Edit.PromptEditTitle, taskID)).WithParseMode(telego.ModeHTML))
 		return
 	}
 
@@ -125,7 +127,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			TaskID: taskID,
 		})
 		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID))
-		_, _ = h.bot.SendMessage(tu.Message(tu.ID(userID), fmt.Sprintf("📝 Введите новое <b>описание</b> для задачи <code>[%s]</code>:", taskID)).WithParseMode(telego.ModeHTML))
+		_, _ = SendMessageSafe(h.bot, tu.Message(tu.ID(userID), fmt.Sprintf(l.Edit.PromptEditDesc, taskID)).WithParseMode(telego.ModeHTML))
 		return
 	}
 
@@ -136,7 +138,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			TaskID: taskID,
 		})
 		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID))
-		_, _ = h.bot.SendMessage(tu.Message(tu.ID(userID), fmt.Sprintf("➕ Введите название <b>подзадачи</b> для <code>[%s]</code>:", taskID)).WithParseMode(telego.ModeHTML))
+		_, _ = SendMessageSafe(h.bot, tu.Message(tu.ID(userID), fmt.Sprintf(l.Edit.PromptAddSubtask, taskID)).WithParseMode(telego.ModeHTML))
 		return
 	}
 
@@ -147,13 +149,14 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			TaskID: taskID,
 		})
 		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID))
-		_, _ = h.bot.SendMessage(tu.Message(tu.ID(userID), fmt.Sprintf("💬 Введите текст <b>комментария</b> для задачи <code>[%s]</code>:", taskID)).WithParseMode(telego.ModeHTML))
+		_, _ = SendMessageSafe(h.bot, tu.Message(tu.ID(userID), fmt.Sprintf(l.Edit.PromptAddComment, taskID)).WithParseMode(telego.ModeHTML))
 		return
 	}
 }
 
 func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message) bool {
 	userID := msg.From.ID
+	l := locales.ForUser(msg.From.LanguageCode)
 	sess := h.fsm.Get(userID)
 	if sess == nil || sess.State == models.StateNone {
 		return false
@@ -162,7 +165,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 	text := strings.TrimSpace(msg.Text)
 	if text == "/cancel" {
 		h.fsm.Clear(userID)
-		_, _ = h.bot.SendMessage(tu.Message(tu.ID(userID), "Действие отменено."))
+		_, _ = SendMessageSafe(h.bot, tu.Message(tu.ID(userID), l.Common.Cancelled))
 		return true
 	}
 
@@ -172,8 +175,8 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		sess.State = models.StateCreatingTaskDesc
 		h.fsm.Set(userID, sess)
 
-		prompt := "✅ Заголовок сохранен.\n\nТеперь введите <b>описание</b> задачи (или отправьте <code>-</code>, чтобы оставить исходный текст):"
-		_, _ = h.bot.SendMessage(tu.Message(tu.ID(userID), prompt).WithParseMode(telego.ModeHTML))
+		prompt := l.Add.FormDescPrompt
+		_, _ = SendMessageSafe(h.bot, tu.Message(tu.ID(userID), prompt).WithParseMode(telego.ModeHTML))
 		return true
 
 	case models.StateCreatingTaskDesc:
@@ -182,7 +185,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		}
 
 		if err := h.storage.CreateTask(ctx, sess.DraftTask); err != nil {
-			_, _ = h.bot.SendMessage(tu.Message(tu.ID(userID), fmt.Sprintf("❌ Ошибка сохранения в БД: %v", err)))
+			_, _ = SendMessageSafe(h.bot, tu.Message(tu.ID(userID), fmt.Sprintf("❌ Error: %v", err)))
 			h.fsm.Clear(userID)
 			return true
 		}
@@ -190,16 +193,17 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		task := sess.DraftTask
 		h.fsm.Clear(userID)
 
-		cardHTML := RenderTaskCard(task)
-		kb := BuildTaskInlineKeyboard(task, true)
+		cardHTML := RenderTaskCard(task, l)
+		kb := BuildTaskInlineKeyboard(task, true, l)
 
 		// 1. If origin chat was a group/topic, send brief confirmation to user in topic
 		if task.ChatID != userID {
-			itemWord := "баг"
+			var topicReplyText string
 			if task.Type == models.TaskTypeIdea {
-				itemWord = "идея"
+				topicReplyText = fmt.Sprintf(l.Add.AcceptedIdea, task.ID)
+			} else {
+				topicReplyText = fmt.Sprintf(l.Add.AcceptedBug, task.ID)
 			}
-			topicReplyText := fmt.Sprintf("✅ Ваш(а) %s <b>[%s]</b> принят(а) в обработку!", itemWord, task.ID)
 			topicMsg := tu.Message(tu.ID(task.ChatID), topicReplyText).WithParseMode(telego.ModeHTML)
 			if task.MessageID != 0 {
 				topicMsg.ReplyParameters = &telego.ReplyParameters{MessageID: int(task.MessageID)}
@@ -207,14 +211,14 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 			if task.TopicID != 0 {
 				topicMsg.MessageThreadID = int(task.TopicID)
 			}
-			_, _ = h.bot.SendMessage(topicMsg)
+			_, _ = SendMessageSafe(h.bot, topicMsg)
 		}
 
 		// 2. Send management card to admin in DM
-		confirmDM := tu.Message(tu.ID(userID), "🎉 <b>Задача успешно создана!</b>\n\n"+cardHTML).
+		confirmDM := tu.Message(tu.ID(userID), l.Add.FormCreatedSuccess+cardHTML).
 			WithParseMode(telego.ModeHTML).
 			WithReplyMarkup(kb)
-		_, _ = h.bot.SendMessage(confirmDM)
+		_, _ = SendMessageSafe(h.bot, confirmDM)
 		return true
 
 	case models.StateEditingTitle:
@@ -222,7 +226,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		if err == nil && task != nil {
 			task.Title = text
 			_ = h.storage.UpdateTask(ctx, task)
-			_, _ = h.bot.SendMessage(tu.Message(tu.ID(userID), fmt.Sprintf("✅ Заголовок задачи <b>[%s]</b> обновлен на: %s", task.ID, html.EscapeString(text))).WithParseMode(telego.ModeHTML))
+			_, _ = SendMessageSafe(h.bot, tu.Message(tu.ID(userID), fmt.Sprintf(l.Edit.TitleUpdated, task.ID, html.EscapeString(text))).WithParseMode(telego.ModeHTML))
 		}
 		h.fsm.Clear(userID)
 		return true
@@ -232,7 +236,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		if err == nil && task != nil {
 			task.Description = text
 			_ = h.storage.UpdateTask(ctx, task)
-			_, _ = h.bot.SendMessage(tu.Message(tu.ID(userID), fmt.Sprintf("✅ Описание задачи <b>[%s]</b> обновлено.", task.ID)).WithParseMode(telego.ModeHTML))
+			_, _ = SendMessageSafe(h.bot, tu.Message(tu.ID(userID), fmt.Sprintf(l.Edit.DescUpdated, task.ID)).WithParseMode(telego.ModeHTML))
 		}
 		h.fsm.Clear(userID)
 		return true
@@ -240,7 +244,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 	case models.StateAddingSubtask:
 		_, err := h.storage.AddSubtask(ctx, sess.TaskID, text)
 		if err == nil {
-			_, _ = h.bot.SendMessage(tu.Message(tu.ID(userID), fmt.Sprintf("✅ Подзадача добавлена к <b>[%s]</b>: %s", sess.TaskID, html.EscapeString(text))).WithParseMode(telego.ModeHTML))
+			_, _ = SendMessageSafe(h.bot, tu.Message(tu.ID(userID), fmt.Sprintf(l.Edit.SubtaskAdded, sess.TaskID, html.EscapeString(text))).WithParseMode(telego.ModeHTML))
 		}
 		h.fsm.Clear(userID)
 		return true
@@ -252,7 +256,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		}
 		_, err := h.storage.AddComment(ctx, sess.TaskID, userID, authorName, text)
 		if err == nil {
-			_, _ = h.bot.SendMessage(tu.Message(tu.ID(userID), fmt.Sprintf("✅ Комментарий добавлен к <b>[%s]</b>.", sess.TaskID)).WithParseMode(telego.ModeHTML))
+			_, _ = SendMessageSafe(h.bot, tu.Message(tu.ID(userID), fmt.Sprintf(l.Edit.CommentAdded, sess.TaskID)).WithParseMode(telego.ModeHTML))
 		}
 		h.fsm.Clear(userID)
 		return true
@@ -261,9 +265,9 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 	return false
 }
 
-func (h *EditHandler) updateMessageCard(chatID int64, messageID int, task *models.Task, isAdmin bool) {
-	cardHTML := RenderTaskCard(task)
-	kb := BuildTaskInlineKeyboard(task, isAdmin)
+func (h *EditHandler) updateMessageCard(chatID int64, messageID int, task *models.Task, isAdmin bool, l *locales.Bundle) {
+	cardHTML := RenderTaskCard(task, l)
+	kb := BuildTaskInlineKeyboard(task, isAdmin, l)
 
 	editParams := &telego.EditMessageTextParams{
 		ChatID:      tu.ID(chatID),
@@ -272,5 +276,5 @@ func (h *EditHandler) updateMessageCard(chatID int64, messageID int, task *model
 		ParseMode:   telego.ModeHTML,
 		ReplyMarkup: kb,
 	}
-	_, _ = h.bot.EditMessageText(editParams)
+	_, _ = EditMessageTextSafe(h.bot, editParams)
 }

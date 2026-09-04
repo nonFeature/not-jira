@@ -159,8 +159,6 @@ func (s *BotService) dispatchUpdate(ctx context.Context, update telego.Update) {
 		switch cmd {
 		case "/start":
 			s.userHandler.HandleStart(ctx, msg)
-		case "/help":
-			s.userHandler.HandleStart(ctx, msg)
 		case "/settings":
 			s.userHandler.HandleSettings(ctx, msg)
 		case "/add":

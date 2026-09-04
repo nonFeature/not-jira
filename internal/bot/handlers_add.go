@@ -8,6 +8,7 @@ import (
 
 	"not-jira/internal/ai"
 	"not-jira/internal/config"
+	"not-jira/internal/locales"
 	"not-jira/internal/models"
 	"not-jira/internal/storage"
 
@@ -36,10 +37,11 @@ func NewAddHandler(bot *telego.Bot, botUsername string, cfg *config.Config, stor
 }
 
 func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
+	l := locales.ForUser(msg.From.LanguageCode)
 	senderID := msg.From.ID
 	if !h.cfg.Telegram.IsAdmin(senderID) {
-		reply := tu.Message(tu.ID(senderID), "⛔️ Создавать задачи могут только администраторы.")
-		_, _ = h.bot.SendMessage(reply)
+		reply := tu.Message(tu.ID(senderID), l.Common.AdminOnly)
+		_, _ = SendMessageSafe(h.bot, reply)
 		return
 	}
 
@@ -75,8 +77,8 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 	}
 
 	if sourceText == "" {
-		reply := tu.Message(tu.ID(senderID), "ℹ️ Ответьте командой <code>/add</code> на сообщение с багом/идеей, либо укажите текст: <code>/add Описание бага</code>").WithParseMode(telego.ModeHTML)
-		_, _ = h.bot.SendMessage(reply)
+		reply := tu.Message(tu.ID(senderID), l.Add.UsageHint).WithParseMode(telego.ModeHTML)
+		_, _ = SendMessageSafe(h.bot, reply)
 		return
 	}
 
@@ -89,7 +91,7 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 	} else {
 		// If in private or generic chat, check if contains idea keywords
 		lower := strings.ToLower(sourceText)
-		if strings.Contains(lower, "идея") || strings.Contains(lower, "предлагаю") || strings.Contains(lower, "фича") {
+		if strings.Contains(lower, "идея") || strings.Contains(lower, "предлагаю") || strings.Contains(lower, "фича") || strings.Contains(lower, "idea") || strings.Contains(lower, "feature") {
 			taskType = models.TaskTypeIdea
 		}
 	}
@@ -97,8 +99,8 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 	// Calculate Next Task ID (e.g. B0, I0)
 	nextID, nextNum, err := h.storage.GetNextTaskID(ctx, taskType)
 	if err != nil {
-		reply := tu.Message(tu.ID(senderID), fmt.Sprintf("❌ Ошибка генерации ID задачи: %v", err))
-		_, _ = h.bot.SendMessage(reply)
+		reply := tu.Message(tu.ID(senderID), fmt.Sprintf("❌ ID generation error: %v", err))
+		_, _ = SendMessageSafe(h.bot, reply)
 		return
 	}
 
@@ -132,9 +134,10 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 
 	// If AI is enabled: auto-summarize
 	if h.summarizer != nil && h.cfg.AI.Enabled {
-		statusMsg, _ := h.bot.SendMessage(tu.Message(tu.ID(senderID), "⏳ <i>Обрабатываю задачу через нейросеть...</i>").WithParseMode(telego.ModeHTML))
+		statusMsg, _ := SendMessageSafe(h.bot, tu.Message(tu.ID(senderID), l.Add.ProcessingAI).WithParseMode(telego.ModeHTML))
 
-		res, err := h.summarizer.Summarize(ctx, taskType.Russian(), sourceText)
+		typeLabel := TaskTypeName(taskType, l)
+		res, err := h.summarizer.Summarize(ctx, typeLabel, sourceText)
 		if err == nil && res != nil {
 			draft.Title = res.Title
 			draft.Description = res.Description
@@ -153,21 +156,22 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 		}
 
 		if err := h.storage.CreateTask(ctx, draft); err != nil {
-			reply := tu.Message(tu.ID(senderID), fmt.Sprintf("❌ Ошибка сохранения в БД: %v", err))
-			_, _ = h.bot.SendMessage(reply)
+			reply := tu.Message(tu.ID(senderID), fmt.Sprintf("❌ Database save error: %v", err))
+			_, _ = SendMessageSafe(h.bot, reply)
 			return
 		}
 
-		cardHTML := RenderTaskCard(draft)
-		kb := BuildTaskInlineKeyboard(draft, true)
+		cardHTML := RenderTaskCard(draft, l)
+		kb := BuildTaskInlineKeyboard(draft, true, l)
 
 		// 1. In group/topic: reply briefly that the task was accepted
 		if msg.Chat.ID != senderID {
-			itemWord := "баг"
+			var topicReplyText string
 			if draft.Type == models.TaskTypeIdea {
-				itemWord = "идея"
+				topicReplyText = fmt.Sprintf(l.Add.AcceptedIdea, draft.ID)
+			} else {
+				topicReplyText = fmt.Sprintf(l.Add.AcceptedBug, draft.ID)
 			}
-			topicReplyText := fmt.Sprintf("✅ Ваш(а) %s <b>[%s]</b> принят(а) в обработку!", itemWord, draft.ID)
 			topicMsg := tu.Message(tu.ID(msg.Chat.ID), topicReplyText).WithParseMode(telego.ModeHTML)
 			if origMsgID != 0 {
 				topicMsg.ReplyParameters = &telego.ReplyParameters{MessageID: origMsgID}
@@ -175,14 +179,14 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 			if topicID != 0 {
 				topicMsg.MessageThreadID = int(topicID)
 			}
-			_, _ = h.bot.SendMessage(topicMsg)
+			_, _ = SendMessageSafe(h.bot, topicMsg)
 		}
 
 		// 2. In admin's DM: send the full management card with buttons
-		dmCardMsg := tu.Message(tu.ID(senderID), "📋 <b>Управление задачей:</b>\n\n"+cardHTML).
+		dmCardMsg := tu.Message(tu.ID(senderID), l.Add.CardHeader+cardHTML).
 			WithParseMode(telego.ModeHTML).
 			WithReplyMarkup(kb)
-		_, dmErr := h.bot.SendMessage(dmCardMsg)
+		_, dmErr := SendMessageSafe(h.bot, dmCardMsg)
 		if dmErr != nil && msg.Chat.ID != senderID {
 			PromptStartInDM(h.bot, h.botUsername, msg)
 		}
@@ -197,11 +201,11 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 		DraftTask: draft,
 	})
 
-	dmText := fmt.Sprintf("📝 <b>Создание задачи <code>[%s]</code> (%s)</b>\n\n<b>Исходный текст:</b>\n<blockquote>%s</blockquote>\n\nОтправьте в ответ <b>заголовок</b> задачи (до 60 символов):",
-		draft.ID, draft.Type.Russian(), html.EscapeString(sourceText))
+	dmText := fmt.Sprintf(l.Add.FormTitlePrompt,
+		draft.ID, TaskTypeName(draft.Type, l), html.EscapeString(sourceText))
 
 	dmMsg := tu.Message(tu.ID(senderID), dmText).WithParseMode(telego.ModeHTML)
-	_, dmErr := h.bot.SendMessage(dmMsg)
+	_, dmErr := SendMessageSafe(h.bot, dmMsg)
 
 	if dmErr != nil {
 		// Admin hasn't started bot in DM yet

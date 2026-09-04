@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"not-jira/internal/config"
+	"not-jira/internal/locales"
 	"not-jira/internal/storage"
 
 	"github.com/mymmrac/telego"
@@ -28,72 +29,66 @@ func NewUserHandler(bot *telego.Bot, botUsername string, cfg *config.Config, sto
 }
 
 func (h *UserHandler) HandleStart(ctx context.Context, msg *telego.Message) {
+	l := locales.ForUser(msg.From.LanguageCode)
 	isAdmin := h.cfg.Telegram.IsAdmin(msg.From.ID)
 
-	text := "👋 <b>Привет! Я not-jira.</b>\n\n" +
-		"Я помогаю собирать и отслеживать задачи, баги и идеи прямо в топиках форума.\n\n" +
-		"<b>Команды:</b>\n" +
-		"• <code>/list</code> — Просмотр списка задач с фильтрами и страницами\n" +
-		"• <code>/view [ID]</code> — Просмотр карточки задачи (например, <code>/view B0</code>)\n" +
-		"• <code>/settings</code> — Настройки уведомлений в ЛС\n" +
-		"• <code>/help</code> — Справка\n\n"
-
+	text := l.Start.GreetingUser
 	if isAdmin {
-		text += "⭐️ <b>Команды администратора:</b>\n" +
-			"• <code>/add</code> — Ответьте на сообщение в топике форума, чтобы зарегистрировать баг (B) или идею (I)\n" +
-			"• В карточке задачи вам доступны кнопки изменения статуса, заголовка, описания, саб-тасков и комментариев.\n"
+		text += l.Start.GreetingAdmin
 	}
 
-	_, err := h.bot.SendMessage(tu.Message(tu.ID(msg.From.ID), text).WithParseMode(telego.ModeHTML))
+	_, err := SendMessageSafe(h.bot, tu.Message(tu.ID(msg.From.ID), text).WithParseMode(telego.ModeHTML))
 	if err != nil && msg.Chat.ID != msg.From.ID {
 		PromptStartInDM(h.bot, h.botUsername, msg)
 	}
 }
 
 func (h *UserHandler) HandleSettings(ctx context.Context, msg *telego.Message) {
+	l := locales.ForUser(msg.From.LanguageCode)
 	settings, err := h.storage.GetUserSettings(ctx, msg.From.ID)
 	if err != nil {
-		_, _ = h.bot.SendMessage(tu.Message(tu.ID(msg.From.ID), "❌ Ошибка загрузки настроек."))
+		_, _ = SendMessageSafe(h.bot, tu.Message(tu.ID(msg.From.ID), "❌ Error loading settings."))
 		return
 	}
 
-	stateDesc := "включены 🔔"
+	stateDesc := l.Settings.StatusEnabled
 	if !settings.NotifyDM {
-		stateDesc = "отключены 🔕"
+		stateDesc = l.Settings.StatusDisabled
 	}
 
-	text := fmt.Sprintf("⚙️ <b>Настройки уведомлений</b>\n\nУведомления в личные сообщения: <b>%s</b>\n\nВы можете изменить настройку нажатием кнопки:", stateDesc)
-	kb := BuildSettingsKeyboard(settings.NotifyDM)
+	text := fmt.Sprintf(l.Settings.Title, stateDesc)
+	kb := BuildSettingsKeyboard(settings.NotifyDM, l)
 
-	_, err = h.bot.SendMessage(tu.Message(tu.ID(msg.From.ID), text).WithParseMode(telego.ModeHTML).WithReplyMarkup(kb))
+	_, err = SendMessageSafe(h.bot, tu.Message(tu.ID(msg.From.ID), text).WithParseMode(telego.ModeHTML).WithReplyMarkup(kb))
 	if err != nil && msg.Chat.ID != msg.From.ID {
 		PromptStartInDM(h.bot, h.botUsername, msg)
 	}
 }
 
 func (h *UserHandler) HandleToggleNotify(ctx context.Context, query *telego.CallbackQuery) {
+	l := locales.ForUser(query.From.LanguageCode)
 	userID := query.From.ID
 	settings, err := h.storage.GetUserSettings(ctx, userID)
 	if err != nil {
-		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText("❌ Ошибка"))
+		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText("❌ Error"))
 		return
 	}
 
 	newStatus := !settings.NotifyDM
 	if err := h.storage.SetNotifyDM(ctx, userID, newStatus); err != nil {
-		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText("❌ Ошибка сохранения"))
+		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText("❌ Save error"))
 		return
 	}
 
-	stateDesc := "включены 🔔"
+	stateDesc := l.Settings.StatusEnabled
 	if !newStatus {
-		stateDesc = "отключены 🔕"
+		stateDesc = l.Settings.StatusDisabled
 	}
 
-	text := fmt.Sprintf("⚙️ <b>Настройки уведомлений</b>\n\nУведомления в личные сообщения: <b>%s</b>\n\nВы можете изменить настройку нажатием кнопки:", stateDesc)
-	kb := BuildSettingsKeyboard(newStatus)
+	text := fmt.Sprintf(l.Settings.Title, stateDesc)
+	kb := BuildSettingsKeyboard(newStatus, l)
 
-	_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText("Настройки обновлены"))
+	_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText(l.Settings.UpdatedAlert))
 
 	editParams := &telego.EditMessageTextParams{
 		ChatID:      tu.ID(query.Message.GetChat().ID),
@@ -102,5 +97,5 @@ func (h *UserHandler) HandleToggleNotify(ctx context.Context, query *telego.Call
 		ParseMode:   telego.ModeHTML,
 		ReplyMarkup: kb,
 	}
-	_, _ = h.bot.EditMessageText(editParams)
+	_, _ = EditMessageTextSafe(h.bot, editParams)
 }

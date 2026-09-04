@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html"
 
+	"not-jira/internal/locales"
 	"not-jira/internal/models"
 	"not-jira/internal/storage"
 
@@ -25,8 +26,10 @@ func NewNotifier(bot *telego.Bot, storage storage.Storage) *Notifier {
 }
 
 func (n *Notifier) NotifyStatusChange(ctx context.Context, task *models.Task) {
-	statusText := fmt.Sprintf("🔔 <b>Статус задачи [%s] обновлен!</b>\n\n<b>Новый статус:</b> %s %s\n<b>Заголовок:</b> %s",
-		task.ID, task.Status.Emoji(), task.Status.Russian(), html.EscapeString(task.Title))
+	// Topic notification (using Russian as community default)
+	lTopic := locales.GetRu()
+	statusText := fmt.Sprintf(lTopic.Notifications.TopicStatusUpdated,
+		task.ID, TaskStatusEmoji(task.Status), TaskStatusName(task.Status, lTopic), html.EscapeString(task.Title))
 
 	// 1. Reply to the original message in the forum topic (if chat_id & message_id are set)
 	if task.ChatID != 0 && task.MessageID != 0 {
@@ -38,21 +41,22 @@ func (n *Notifier) NotifyStatusChange(ctx context.Context, task *models.Task) {
 		if task.TopicID != 0 {
 			msg.MessageThreadID = int(task.TopicID)
 		}
-		_, _ = n.bot.SendMessage(msg)
+		_, _ = SendMessageSafe(n.bot, msg)
 	}
 
 	// 2. Notify author in private chat if enabled
 	if task.AuthorID != 0 {
 		settings, err := n.storage.GetUserSettings(ctx, task.AuthorID)
 		if err == nil && settings.NotifyDM {
-			dmText := fmt.Sprintf("🔔 <b>Обновление по вашей задаче [%s]!</b>\n\n<b>Новый статус:</b> %s %s\n<b>Заголовок:</b> %s\n\n<i>(Вы можете отключить уведомления в личку кнопкой ниже)</i>",
-				task.ID, task.Status.Emoji(), task.Status.Russian(), html.EscapeString(task.Title))
+			lAuthor := locales.GetRu()
+			dmText := fmt.Sprintf(lAuthor.Notifications.DMStatusUpdated,
+				task.ID, TaskStatusEmoji(task.Status), TaskStatusName(task.Status, lAuthor), html.EscapeString(task.Title))
 
 			dmMsg := tu.Message(tu.ID(task.AuthorID), dmText)
 			dmMsg.ParseMode = telego.ModeHTML
-			dmMsg.ReplyMarkup = BuildSettingsKeyboard(true)
+			dmMsg.ReplyMarkup = BuildSettingsKeyboard(true, lAuthor)
 
-			_, _ = n.bot.SendMessage(dmMsg)
+			_, _ = SendMessageSafe(n.bot, dmMsg)
 		}
 	}
 }
