@@ -37,7 +37,7 @@ func IsCustomEmojiEnabled() bool {
 var (
 	ID_CHECK = "" // ✅ Done / Success / Approved
 	ID_CROSS = "" // ❌ Rejected / Error
-	ID_BUG = "" // 🐛 Bug
+	ID_BUG = "" // 🪲 Bug
 	ID_IDEA = "" // 💡 Idea
 	ID_NEW = "" // 🆕 New task status
 	ID_GEAR = "" // ⚙️ In progress / Settings
@@ -75,7 +75,7 @@ func E(emojiID string, fallback string) string {
 // Emoji Accessors (mimicking PluginsBot _EmojiAccessor)
 func Check() string { return E(ID_CHECK, "✅") }
 func Cross() string { return E(ID_CROSS, "❌") }
-func Bug() string { return E(ID_BUG, "🐛") }
+func Bug() string { return E(ID_BUG, "🪲") }
 func Idea() string { return E(ID_IDEA, "💡") }
 func New() string { return E(ID_NEW, "🆕") }
 func Gear() string { return E(ID_GEAR, "⚙️") }
