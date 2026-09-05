@@ -681,5 +681,27 @@ func TestFSMCleanup(t *testing.T) {
 	}
 }
 
+func TestBuildSettingsKeyboard(t *testing.T) {
+	l := locales.ForUser("ru")
 
+	// Both enabled
+	kb := BuildSettingsKeyboard(true, true, l)
+	if len(kb.InlineKeyboard) != 2 {
+		t.Fatalf("expected 2 rows in settings keyboard, got %d", len(kb.InlineKeyboard))
+	}
+	if kb.InlineKeyboard[0][0].CallbackData != "settings:toggle_dm" {
+		t.Errorf("expected row 0 callback data settings:toggle_dm, got %s", kb.InlineKeyboard[0][0].CallbackData)
+	}
+	if kb.InlineKeyboard[1][0].CallbackData != "settings:toggle_forum" {
+		t.Errorf("expected row 1 callback data settings:toggle_forum, got %s", kb.InlineKeyboard[1][0].CallbackData)
+	}
+	if !strings.Contains(kb.InlineKeyboard[0][0].Text, "ЛС:") || !strings.Contains(kb.InlineKeyboard[1][0].Text, "Форум:") {
+		t.Errorf("unexpected button texts: %s, %s", kb.InlineKeyboard[0][0].Text, kb.InlineKeyboard[1][0].Text)
+	}
 
+	// Both disabled / silent
+	kb2 := BuildSettingsKeyboard(false, false, l)
+	if !strings.Contains(kb2.InlineKeyboard[0][0].Text, "отключены") || !strings.Contains(kb2.InlineKeyboard[1][0].Text, "без звука") {
+		t.Errorf("unexpected disabled button texts: %s, %s", kb2.InlineKeyboard[0][0].Text, kb2.InlineKeyboard[1][0].Text)
+	}
+}

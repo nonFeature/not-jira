@@ -78,6 +78,7 @@ func (s *SQLiteStorage) initSchema() error {
 		`CREATE TABLE IF NOT EXISTS user_settings (
 			user_id INTEGER PRIMARY KEY,
 			notify_dm INTEGER NOT NULL DEFAULT 1,
+			notify_forum INTEGER NOT NULL DEFAULT 1,
 			updated_at DATETIME NOT NULL
 		);`,
 		`CREATE TABLE IF NOT EXISTS users (
@@ -100,6 +101,7 @@ func (s *SQLiteStorage) initSchema() error {
 	_, _ = s.db.Exec("ALTER TABLE tasks ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0;")
 	_, _ = s.db.Exec("ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'P2';")
 	_, _ = s.db.Exec("ALTER TABLE tasks ADD COLUMN labels TEXT NOT NULL DEFAULT '';")
+	_, _ = s.db.Exec("ALTER TABLE user_settings ADD COLUMN notify_forum INTEGER NOT NULL DEFAULT 1;")
 
 	createIndexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(type);`,
@@ -558,18 +560,23 @@ func (s *SQLiteStorage) GetComments(ctx context.Context, taskID string) ([]model
 
 // User Settings
 func (s *SQLiteStorage) GetUserSettings(ctx context.Context, userID int64) (*models.UserSettings, error) {
-	var notify int
+	var notifyDM, notifyForum int
 	var updated time.Time
-	err := s.db.QueryRowContext(ctx, "SELECT notify_dm, updated_at FROM user_settings WHERE user_id = ?", userID).
-		Scan(&notify, &updated)
+	err := s.db.QueryRowContext(ctx, "SELECT notify_dm, notify_forum, updated_at FROM user_settings WHERE user_id = ?", userID).
+		Scan(&notifyDM, &notifyForum, &updated)
 	if err == sql.ErrNoRows {
 		// Default: notifications enabled
-		return &models.UserSettings{UserID: userID, NotifyDM: true}, nil
+		return &models.UserSettings{UserID: userID, NotifyDM: true, NotifyForum: true}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &models.UserSettings{UserID: userID, NotifyDM: notify == 1, UpdatedAt: updated}, nil
+	return &models.UserSettings{
+		UserID:      userID,
+		NotifyDM:    notifyDM == 1,
+		NotifyForum: notifyForum == 1,
+		UpdatedAt:   updated,
+	}, nil
 }
 
 func (s *SQLiteStorage) SetNotifyDM(ctx context.Context, userID int64, notify bool) error {
@@ -578,8 +585,20 @@ func (s *SQLiteStorage) SetNotifyDM(ctx context.Context, userID int64, notify bo
 		val = 1
 	}
 	now := time.Now().UTC()
-	query := `INSERT INTO user_settings (user_id, notify_dm, updated_at) VALUES (?, ?, ?)
+	query := `INSERT INTO user_settings (user_id, notify_dm, notify_forum, updated_at) VALUES (?, ?, 1, ?)
 		ON CONFLICT(user_id) DO UPDATE SET notify_dm = excluded.notify_dm, updated_at = excluded.updated_at`
+	_, err := s.db.ExecContext(ctx, query, userID, val, now)
+	return err
+}
+
+func (s *SQLiteStorage) SetNotifyForum(ctx context.Context, userID int64, notify bool) error {
+	val := 0
+	if notify {
+		val = 1
+	}
+	now := time.Now().UTC()
+	query := `INSERT INTO user_settings (user_id, notify_dm, notify_forum, updated_at) VALUES (?, 1, ?, ?)
+		ON CONFLICT(user_id) DO UPDATE SET notify_forum = excluded.notify_forum, updated_at = excluded.updated_at`
 	_, err := s.db.ExecContext(ctx, query, userID, val, now)
 	return err
 }

@@ -237,13 +237,16 @@ func TestUserSettings(t *testing.T) {
 	ctx := context.Background()
 	userID := int64(987654)
 
-	// Default should be notify = true
+	// Default should be notify = true for both DM and Forum
 	settings, err := st.GetUserSettings(ctx, userID)
 	if err != nil {
 		t.Fatalf("GetUserSettings failed: %v", err)
 	}
 	if !settings.NotifyDM {
 		t.Errorf("expected default NotifyDM to be true")
+	}
+	if !settings.NotifyForum {
+		t.Errorf("expected default NotifyForum to be true")
 	}
 
 	// Disable DM
@@ -258,6 +261,39 @@ func TestUserSettings(t *testing.T) {
 	}
 	if updated.NotifyDM {
 		t.Errorf("expected NotifyDM to be false")
+	}
+	if !updated.NotifyForum {
+		t.Errorf("expected NotifyForum to remain true after modifying NotifyDM")
+	}
+
+	// Disable Forum
+	err = st.SetNotifyForum(ctx, userID, false)
+	if err != nil {
+		t.Fatalf("SetNotifyForum failed: %v", err)
+	}
+
+	updated2, err := st.GetUserSettings(ctx, userID)
+	if err != nil {
+		t.Fatalf("GetUserSettings updated2 failed: %v", err)
+	}
+	if updated2.NotifyForum {
+		t.Errorf("expected NotifyForum to be false")
+	}
+	if updated2.NotifyDM {
+		t.Errorf("expected NotifyDM to remain false after modifying NotifyForum")
+	}
+
+	// Re-enable Forum
+	err = st.SetNotifyForum(ctx, userID, true)
+	if err != nil {
+		t.Fatalf("SetNotifyForum(true) failed: %v", err)
+	}
+	updated3, err := st.GetUserSettings(ctx, userID)
+	if err != nil {
+		t.Fatalf("GetUserSettings updated3 failed: %v", err)
+	}
+	if !updated3.NotifyForum {
+		t.Errorf("expected NotifyForum to be true")
 	}
 }
 

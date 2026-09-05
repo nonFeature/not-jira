@@ -10,13 +10,13 @@ func TestForUser(t *testing.T) {
 		lang     string
 		expected string
 	}{
-		{"ru", "<b>not-jira</b>"},
-		{"ru-RU", "<b>not-jira</b>"},
-		{"RU", "<b>not-jira</b>"},
-		{"en", "<b>not-jira</b>"},
-		{"en-US", "<b>not-jira</b>"},
-		{"de", "<b>not-jira</b>"},
-		{"", "<b>not-jira</b>"},
+		{"ru", "not-jira"},
+		{"ru-RU", "not-jira"},
+		{"RU", "not-jira"},
+		{"en", "not-jira"},
+		{"en-US", "not-jira"},
+		{"de", "not-jira"},
+		{"", "not-jira"},
 	}
 
 	for _, tt := range tests {

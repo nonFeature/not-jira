@@ -13,7 +13,7 @@ func GetRu() *Bundle {
 			OnlyTextAllowed: fmt.Sprintf("%s Поддерживается только текст. Пожалуйста, отправьте текстовое сообщение.", emoji.Cross()),
 		},
 		Start: Start{
-			GreetingUser: fmt.Sprintf("%s <b>not-jira</b> — трекер задач в топиках\n\n"+
+			GreetingUser: fmt.Sprintf("%s <b><a href=\"https://github.com/nonFeature/not-jira\">not-jira</a></b> — трекер задач в топиках\n\n"+
 				"<b>Команды:</b>\n"+
 				"/list — список задач\n"+
 				"/view [ID] — карточка задачи (напр. /view B0)\n"+
@@ -23,9 +23,15 @@ func GetRu() *Bundle {
 				"/backup — выгрузить бэкап базы данных\n", emoji.Star()),
 		},
 		Settings: Settings{
-			Title:          fmt.Sprintf("%s <b>Настройки уведомлений</b>\n\nУведомления в ЛС: <b>%%s</b>", emoji.Gear()),
+			Title: fmt.Sprintf("%s <b>Настройки уведомлений</b>\n\n"+
+				"• Уведомления в ЛС: <b>%%s</b>\n"+
+				"• Ответы в топике: <b>%%s</b>", emoji.Gear()),
 			StatusEnabled:  fmt.Sprintf("включены %s", emoji.Bell()),
 			StatusDisabled: fmt.Sprintf("отключены %s", emoji.BellOff()),
+			StatusSound:    fmt.Sprintf("со звуком %s", emoji.Bell()),
+			StatusSilent:   fmt.Sprintf("без звука %s", emoji.BellOff()),
+			BtnDM:          "ЛС: %s",
+			BtnForum:       "Форум: %s",
 			BtnEnable:      "Включить",
 			BtnDisable:     "Отключить",
 			UpdatedAlert:   "Настройки обновлены",

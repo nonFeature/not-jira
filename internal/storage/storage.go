@@ -47,6 +47,7 @@ type Storage interface {
 	// User Settings
 	GetUserSettings(ctx context.Context, userID int64) (*models.UserSettings, error)
 	SetNotifyDM(ctx context.Context, userID int64, notify bool) error
+	SetNotifyForum(ctx context.Context, userID int64, notify bool) error
 
 	// Users Cache
 	UpsertUser(ctx context.Context, userID int64, username, firstName string) error

@@ -35,6 +35,10 @@ type Settings struct {
 	Title          string
 	StatusEnabled  string
 	StatusDisabled string
+	StatusSound    string
+	StatusSilent   string
+	BtnDM          string
+	BtnForum       string
 	BtnEnable      string
 	BtnDisable     string
 	UpdatedAlert   string

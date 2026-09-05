@@ -236,9 +236,10 @@ type Comment struct {
 }
 
 type UserSettings struct {
-	UserID    int64     `json:"user_id"`
-	NotifyDM  bool      `json:"notify_dm"`
-	UpdatedAt time.Time `json:"updated_at"`
+	UserID      int64     `json:"user_id"`
+	NotifyDM    bool      `json:"notify_dm"`
+	NotifyForum bool      `json:"notify_forum"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type User struct {

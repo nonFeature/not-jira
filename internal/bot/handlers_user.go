@@ -10,6 +10,7 @@ import (
 
 	"not-jira/internal/config"
 	"not-jira/internal/locales"
+	"not-jira/internal/models"
 	"not-jira/internal/storage"
 
 	"github.com/mymmrac/telego"
@@ -41,10 +42,28 @@ func (h *UserHandler) HandleStart(ctx context.Context, msg *telego.Message) {
 		text += l.Start.GreetingAdmin
 	}
 
-	_, err := SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(msg.From.ID), text).WithParseMode(telego.ModeHTML))
+	startMsg := tu.Message(tu.ID(msg.From.ID), text).WithParseMode(telego.ModeHTML)
+	startMsg.LinkPreviewOptions = &telego.LinkPreviewOptions{IsDisabled: true}
+	_, err := SendMessageSafe(ctx, h.bot, startMsg)
 	if err != nil && msg.Chat.ID != msg.From.ID {
 		PromptStartInDM(ctx, h.bot, h.botUsername, msg)
 	}
+}
+
+func (h *UserHandler) formatSettings(settings *models.UserSettings, l *locales.Bundle) (string, *telego.InlineKeyboardMarkup) {
+	dmDesc := l.Settings.StatusEnabled
+	if !settings.NotifyDM {
+		dmDesc = l.Settings.StatusDisabled
+	}
+
+	forumDesc := l.Settings.StatusSound
+	if !settings.NotifyForum {
+		forumDesc = l.Settings.StatusSilent
+	}
+
+	text := fmt.Sprintf(l.Settings.Title, dmDesc, forumDesc)
+	kb := BuildSettingsKeyboard(settings.NotifyDM, settings.NotifyForum, l)
+	return text, kb
 }
 
 func (h *UserHandler) HandleSettings(ctx context.Context, msg *telego.Message) {
@@ -55,14 +74,7 @@ func (h *UserHandler) HandleSettings(ctx context.Context, msg *telego.Message) {
 		return
 	}
 
-	stateDesc := l.Settings.StatusEnabled
-	if !settings.NotifyDM {
-		stateDesc = l.Settings.StatusDisabled
-	}
-
-	text := fmt.Sprintf(l.Settings.Title, stateDesc)
-	kb := BuildSettingsKeyboard(settings.NotifyDM, l)
-
+	text, kb := h.formatSettings(settings, l)
 	_, err = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(msg.From.ID), text).WithParseMode(telego.ModeHTML).WithReplyMarkup(kb))
 	if err != nil && msg.Chat.ID != msg.From.ID {
 		PromptStartInDM(ctx, h.bot, h.botUsername, msg)
@@ -78,26 +90,28 @@ func (h *UserHandler) HandleToggleNotify(ctx context.Context, query *telego.Call
 		return
 	}
 
-	newStatus := !settings.NotifyDM
-	if query.Data == "settings:enable" {
-		newStatus = true
-	} else if query.Data == "settings:disable" {
-		newStatus = false
+	if query.Data == "settings:toggle_forum" {
+		newStatus := !settings.NotifyForum
+		if err := h.storage.SetNotifyForum(ctx, userID, newStatus); err != nil {
+			_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID).WithText("❌ Save error"))
+			return
+		}
+		settings.NotifyForum = newStatus
+	} else {
+		newStatus := !settings.NotifyDM
+		if query.Data == "settings:enable" {
+			newStatus = true
+		} else if query.Data == "settings:disable" {
+			newStatus = false
+		}
+		if err := h.storage.SetNotifyDM(ctx, userID, newStatus); err != nil {
+			_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID).WithText("❌ Save error"))
+			return
+		}
+		settings.NotifyDM = newStatus
 	}
 
-	if err := h.storage.SetNotifyDM(ctx, userID, newStatus); err != nil {
-		_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID).WithText("❌ Save error"))
-		return
-	}
-
-	stateDesc := l.Settings.StatusEnabled
-	if !newStatus {
-		stateDesc = l.Settings.StatusDisabled
-	}
-
-	text := fmt.Sprintf(l.Settings.Title, stateDesc)
-	kb := BuildSettingsKeyboard(newStatus, l)
-
+	text, kb := h.formatSettings(settings, l)
 	_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID).WithText(l.Settings.UpdatedAlert))
 
 	editParams := &telego.EditMessageTextParams{

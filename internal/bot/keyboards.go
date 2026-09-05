@@ -720,15 +720,41 @@ func BuildMyTasksKeyboard(tasks []models.Task, currentTab string, page, totalPag
 	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{InlineKeyboard: rows})
 }
 
-func BuildSettingsKeyboard(notifyDM bool, l *locales.Bundle) *telego.InlineKeyboardMarkup {
-	var btn telego.InlineKeyboardButton
+func BuildSettingsKeyboard(notifyDM bool, notifyForum bool, l *locales.Bundle) *telego.InlineKeyboardMarkup {
+	var dmText, dmEmojiID, dmFallback, dmStyle string
 	if notifyDM {
-		btn = emoji.MakeInlineButton(l.Settings.BtnDisable, "settings:disable", "", emoji.ID_BELL_OFF, "🔕", "danger")
+		dmText = fmt.Sprintf(l.Settings.BtnDM, l.Settings.StatusEnabled)
+		dmEmojiID = emoji.ID_BELL
+		dmFallback = "🔔"
+		dmStyle = "primary"
 	} else {
-		btn = emoji.MakeInlineButton(l.Settings.BtnEnable, "settings:enable", "", emoji.ID_BELL, "🔔", "success")
+		dmText = fmt.Sprintf(l.Settings.BtnDM, l.Settings.StatusDisabled)
+		dmEmojiID = emoji.ID_BELL_OFF
+		dmFallback = "🔕"
+		dmStyle = "danger"
 	}
+
+	var forumText, forumEmojiID, forumFallback, forumStyle string
+	if notifyForum {
+		forumText = fmt.Sprintf(l.Settings.BtnForum, l.Settings.StatusSound)
+		forumEmojiID = emoji.ID_BELL
+		forumFallback = "🔔"
+		forumStyle = "primary"
+	} else {
+		forumText = fmt.Sprintf(l.Settings.BtnForum, l.Settings.StatusSilent)
+		forumEmojiID = emoji.ID_BELL_OFF
+		forumFallback = "🔕"
+		forumStyle = "danger"
+	}
+
+	btnDM := emoji.MakeInlineButton(dmText, "settings:toggle_dm", "", dmEmojiID, dmFallback, dmStyle)
+	btnForum := emoji.MakeInlineButton(forumText, "settings:toggle_forum", "", forumEmojiID, forumFallback, forumStyle)
+
 	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{
-		InlineKeyboard: [][]telego.InlineKeyboardButton{{btn}},
+		InlineKeyboard: [][]telego.InlineKeyboardButton{
+			{btnDM},
+			{btnForum},
+		},
 	})
 }
 

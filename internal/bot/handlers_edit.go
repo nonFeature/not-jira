@@ -140,13 +140,16 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 		if task.AssigneeUsername == "" {
 			task.AssigneeUsername = query.From.FirstName
 		}
+		oldStatus := task.Status
 		if task.Status == models.StatusNew {
 			task.Status = models.StatusInProgress
 		}
 		_ = h.storage.UpdateTask(ctx, task)
 
 		h.answerAlert(ctx, query.ID, fmt.Sprintf(l.Edit.TaskClaimedNotify, task.AssigneeUsername, task.ID), false)
-		h.notifier.NotifyStatusChange(ctx, task)
+		if oldStatus != task.Status {
+			h.notifier.NotifyStatusChange(ctx, task)
+		}
 		h.updateMessageCard(ctx, query.Message.GetChat().ID, query.Message.GetMessageID(), task, userID, l)
 		return
 	}
@@ -171,7 +174,6 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 		_ = h.storage.UpdateTask(ctx, task)
 
 		h.answerAlert(ctx, query.ID, l.Edit.TaskUnclaimedAlert, false)
-		h.notifier.NotifyStatusChange(ctx, task)
 		h.updateMessageCard(ctx, query.Message.GetChat().ID, query.Message.GetMessageID(), task, userID, l)
 		return
 	}
@@ -223,6 +225,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 		if task.AssigneeUsername == "" {
 			task.AssigneeUsername = query.From.FirstName
 		}
+		oldStatus := task.Status
 		if task.Status == models.StatusNew {
 			task.Status = models.StatusInProgress
 		}
@@ -235,7 +238,9 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			Text:      fmt.Sprintf(l.Edit.TransferAcceptedNotify, task.AssigneeUsername, task.ID),
 			ParseMode: telego.ModeHTML,
 		})
-		h.notifier.NotifyStatusChange(ctx, task)
+		if oldStatus != task.Status {
+			h.notifier.NotifyStatusChange(ctx, task)
+		}
 		return
 	}
 
@@ -926,7 +931,6 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			ReplyMarkup: kb,
 		}
 		_, _ = EditMessageTextSafe(ctx, h.bot, editMsg)
-		h.notifier.NotifyStatusChange(ctx, task)
 		return
 	}
 
@@ -958,7 +962,6 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			ReplyMarkup: kb,
 		}
 		_, _ = EditMessageTextSafe(ctx, h.bot, editMsg)
-		h.notifier.NotifyStatusChange(ctx, task)
 		return
 	}
 

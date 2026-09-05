@@ -13,7 +13,7 @@ func GetEn() *Bundle {
 			OnlyTextAllowed: fmt.Sprintf("%s Only text messages are supported. Please send a text message.", emoji.Cross()),
 		},
 		Start: Start{
-			GreetingUser: fmt.Sprintf("%s <b>not-jira</b> — topic task tracker\n\n"+
+			GreetingUser: fmt.Sprintf("%s <b><a href=\"https://github.com/nonFeature/not-jira\">not-jira</a></b> — topic task tracker\n\n"+
 				"<b>Commands:</b>\n"+
 				"/list — task list\n"+
 				"/view [ID] — task card (e.g. /view B0)\n"+
@@ -23,9 +23,15 @@ func GetEn() *Bundle {
 				"/backup — download database backup\n", emoji.Star()),
 		},
 		Settings: Settings{
-			Title:          fmt.Sprintf("%s <b>Notification Settings</b>\n\nDM notifications: <b>%%s</b>", emoji.Gear()),
+			Title: fmt.Sprintf("%s <b>Notification Settings</b>\n\n"+
+				"• DM notifications: <b>%%s</b>\n"+
+				"• Forum topic replies: <b>%%s</b>", emoji.Gear()),
 			StatusEnabled:  fmt.Sprintf("enabled %s", emoji.Bell()),
 			StatusDisabled: fmt.Sprintf("disabled %s", emoji.BellOff()),
+			StatusSound:    fmt.Sprintf("with sound %s", emoji.Bell()),
+			StatusSilent:   fmt.Sprintf("silent %s", emoji.BellOff()),
+			BtnDM:          "DM: %s",
+			BtnForum:       "Forum: %s",
 			BtnEnable:      "Enable",
 			BtnDisable:     "Disable",
 			UpdatedAlert:   "Settings updated",
