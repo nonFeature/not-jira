@@ -28,13 +28,13 @@ ai:
   enabled: false
 
   # OpenAI-совместимый эндпоинт (Mistral, Groq, OpenRouter, DeepSeek и др.)
-  base_url: "https://api.mistral.ai/v1"
+  base_url: "https://openrouter.ai/api/v1/"
 
   # API ключ
-  api_key: "your_mistral_api_key_here"
+  api_key: "your_api_key"
 
   # Модель (например, mistral-small-latest, open-mistral-7b, llama-3.1-8b-instant)
-  model: "mistral-small-latest"
+  model: "openrouter/free"
 
   # Направлять ли запросы к AI через тот же прокси (помогает обойти блокировки РФ)
   use_proxy: true
