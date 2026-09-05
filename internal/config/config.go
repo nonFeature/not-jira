@@ -98,6 +98,15 @@ func Load(path string) (*Config, error) {
 			}
 		}
 	}
+	if devs := os.Getenv("TELEGRAM_DEV_IDS"); devs != "" {
+		cfg.Telegram.DevIDs = nil
+		for _, part := range strings.Split(devs, ",") {
+			part = strings.TrimSpace(part)
+			if id, err := strconv.ParseInt(part, 10, 64); err == nil {
+				cfg.Telegram.DevIDs = append(cfg.Telegram.DevIDs, id)
+			}
+		}
+	}
 	if bugsTopic := os.Getenv("TELEGRAM_BUGS_TOPIC_ID"); bugsTopic != "" {
 		if id, err := strconv.Atoi(bugsTopic); err == nil {
 			cfg.Telegram.BugsTopicID = id
