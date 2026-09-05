@@ -135,6 +135,58 @@ func TestSubtasksAndComments(t *testing.T) {
 	if len(loaded.Comments) != 1 {
 		t.Errorf("expected 1 comment, got %d", len(loaded.Comments))
 	}
+
+	// Update subtask
+	if err := st.UpdateSubtask(ctx, sub1.ID, "Updated subtask title"); err != nil {
+		t.Fatalf("UpdateSubtask failed: %v", err)
+	}
+	subs, _ := st.GetSubtasks(ctx, "B0")
+	if len(subs) != 1 || subs[0].Title != "Updated subtask title" {
+		t.Errorf("expected updated subtask title, got %v", subs)
+	}
+
+	// Update comment
+	if err := st.UpdateComment(ctx, comm.ID, "Updated comment text"); err != nil {
+		t.Fatalf("UpdateComment failed: %v", err)
+	}
+	comms, _ := st.GetComments(ctx, "B0")
+	if len(comms) != 1 || comms[0].Text != "Updated comment text" {
+		t.Errorf("expected updated comment text, got %v", comms)
+	}
+
+	// Delete subtask
+	if err := st.DeleteSubtask(ctx, sub1.ID); err != nil {
+		t.Fatalf("DeleteSubtask failed: %v", err)
+	}
+	subsAfterDel, _ := st.GetSubtasks(ctx, "B0")
+	if len(subsAfterDel) != 0 {
+		t.Errorf("expected 0 subtasks after delete, got %d", len(subsAfterDel))
+	}
+
+	// Delete comment
+	if err := st.DeleteComment(ctx, comm.ID); err != nil {
+		t.Fatalf("DeleteComment failed: %v", err)
+	}
+	commsAfterDel, _ := st.GetComments(ctx, "B0")
+	if len(commsAfterDel) != 0 {
+		t.Errorf("expected 0 comments after delete, got %d", len(commsAfterDel))
+	}
+
+	// Test ClearSubtasks and ClearComments
+	_, _ = st.AddSubtask(ctx, "B0", "Sub 1")
+	_, _ = st.AddSubtask(ctx, "B0", "Sub 2")
+	_ = st.ClearSubtasks(ctx, "B0")
+	subsAfterClear, _ := st.GetSubtasks(ctx, "B0")
+	if len(subsAfterClear) != 0 {
+		t.Errorf("expected 0 subtasks after clear, got %d", len(subsAfterClear))
+	}
+
+	_, _ = st.AddComment(ctx, "B0", 1, "test", "Comm 1")
+	_ = st.ClearComments(ctx, "B0")
+	commsAfterClear, _ := st.GetComments(ctx, "B0")
+	if len(commsAfterClear) != 0 {
+		t.Errorf("expected 0 comments after clear, got %d", len(commsAfterClear))
+	}
 }
 
 func TestListAndPagination(t *testing.T) {
@@ -367,4 +419,75 @@ func TestLegacyMigration(t *testing.T) {
 		t.Errorf("expected assignee 999/migrated_user, got %d/%s", got.AssigneeID, got.AssigneeUsername)
 	}
 }
+
+func TestPriorityAndLabels(t *testing.T) {
+	st, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	task := &models.Task{
+		ID:          "P0_TASK",
+		Num:         100,
+		Type:        models.TaskTypeBug,
+		Title:       "Critical Auth Bug",
+		Description: "Login fails",
+		Status:      models.StatusNew,
+		Priority:    models.PriorityP0,
+		Labels:      []string{"backend", "auth"},
+		AuthorID:    444,
+	}
+
+	if err := st.CreateTask(ctx, task); err != nil {
+		t.Fatalf("CreateTask failed: %v", err)
+	}
+
+	got, err := st.GetTask(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("GetTask failed: %v", err)
+	}
+	if got.Priority != models.PriorityP0 {
+		t.Errorf("expected priority P0, got %s", got.Priority)
+	}
+	if len(got.Labels) != 2 || got.Labels[0] != "backend" || got.Labels[1] != "auth" {
+		t.Errorf("expected labels [backend, auth], got %v", got.Labels)
+	}
+
+	// Update priority and labels
+	got.Priority = models.PriorityP1
+	got.Labels = []string{"security"}
+	if err := st.UpdateTask(ctx, got); err != nil {
+		t.Fatalf("UpdateTask failed: %v", err)
+	}
+
+	updated, _ := st.GetTask(ctx, task.ID)
+	if updated.Priority != models.PriorityP1 {
+		t.Errorf("expected updated priority P1, got %s", updated.Priority)
+	}
+	if len(updated.Labels) != 1 || updated.Labels[0] != "security" {
+		t.Errorf("expected updated labels [security], got %v", updated.Labels)
+	}
+
+	// Filter by Label
+	tasksByLabel, total, err := st.ListTasks(ctx, storage.TaskFilter{Label: "security"}, 0, 10)
+	if err != nil || total != 1 || len(tasksByLabel) != 1 {
+		t.Errorf("expected 1 task by label 'security', got total %d, err: %v", total, err)
+	}
+
+	// Filter by Author
+	authID := int64(444)
+	tasksByAuthor, total, err := st.ListTasks(ctx, storage.TaskFilter{AuthorID: &authID}, 0, 10)
+	if err != nil || total != 1 || len(tasksByAuthor) != 1 {
+		t.Errorf("expected 1 task by AuthorID 444, got total %d, err: %v", total, err)
+	}
+
+	// Test GetAllLabels
+	labels, err := st.GetAllLabels(ctx)
+	if err != nil {
+		t.Fatalf("GetAllLabels failed: %v", err)
+	}
+	if len(labels) != 1 || labels[0] != "security" {
+		t.Errorf("expected labels ['security'], got %v", labels)
+	}
+}
+
 

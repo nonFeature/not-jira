@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html"
 	"strings"
+	"time"
 
 	"not-jira/internal/emoji"
 	"not-jira/internal/locales"
@@ -70,6 +71,36 @@ func TaskStatusName(s models.TaskStatus, l *locales.Bundle) string {
 	}
 }
 
+func TaskPriorityEmoji(p models.TaskPriority) string {
+	switch p {
+	case models.PriorityP0:
+		return emoji.P0()
+	case models.PriorityP1:
+		return emoji.P1()
+	case models.PriorityP2:
+		return emoji.P2()
+	case models.PriorityP3:
+		return emoji.P3()
+	default:
+		return emoji.P2()
+	}
+}
+
+func TaskPriorityName(p models.TaskPriority, l *locales.Bundle) string {
+	switch p {
+	case models.PriorityP0:
+		return l.Task.P0
+	case models.PriorityP1:
+		return l.Task.P1
+	case models.PriorityP2:
+		return l.Task.P2
+	case models.PriorityP3:
+		return l.Task.P3
+	default:
+		return l.Task.P2
+	}
+}
+
 func RenderTaskCard(task *models.Task, l *locales.Bundle) string {
 	var sb strings.Builder
 
@@ -84,6 +115,19 @@ func RenderTaskCard(task *models.Task, l *locales.Bundle) string {
 	}
 	sb.WriteString(statusText)
 
+	priority := task.Priority
+	if priority == "" {
+		priority = models.PriorityP2
+	}
+	sb.WriteString(fmt.Sprintf(l.Task.PriorityLabel, TaskPriorityEmoji(priority), TaskPriorityName(priority, l)))
+
+	if len(task.Labels) > 0 {
+		formatted := task.FormattedLabels()
+		if formatted != "" {
+			sb.WriteString(fmt.Sprintf(l.Task.LabelsLabel, html.EscapeString(formatted)))
+		}
+	}
+
 	if task.AuthorUsername != "" {
 		sb.WriteString(fmt.Sprintf(l.Task.AuthorLabel, html.EscapeString(task.AuthorUsername)))
 	}
@@ -92,7 +136,12 @@ func RenderTaskCard(task *models.Task, l *locales.Bundle) string {
 	} else {
 		sb.WriteString(l.Task.UnassignedLabel)
 	}
-	sb.WriteString(fmt.Sprintf(l.Task.CreatedLabel, task.CreatedAt.Format("02.01.2006 15:04")))
+
+	updatedTime := task.UpdatedAt
+	if updatedTime.IsZero() {
+		updatedTime = task.CreatedAt
+	}
+	sb.WriteString(fmt.Sprintf(l.Task.CreatedLabel, task.CreatedAt.Format("02.01.2006 15:04"), formatRelativeTime(updatedTime, l)))
 
 	// Description inside an expandable blockquote (Bot API 7.x)
 	sb.WriteString(fmt.Sprintf(l.Task.DescLabel, html.EscapeString(task.Description)))
@@ -105,13 +154,17 @@ func RenderTaskCard(task *models.Task, l *locales.Bundle) string {
 				doneCount++
 			}
 		}
-		sb.WriteString(fmt.Sprintf(l.Task.SubtasksLabel, doneCount, len(task.Subtasks)))
+		percent := (doneCount * 100) / len(task.Subtasks)
+		bar := renderProgressBar(doneCount, len(task.Subtasks))
+		sb.WriteString(fmt.Sprintf(l.Task.SubtasksLabel, doneCount, len(task.Subtasks), bar, percent))
 		for _, s := range task.Subtasks {
 			check := emoji.SubEmpty()
+			title := html.EscapeString(s.Title)
 			if s.IsDone {
 				check = emoji.SubDone()
+				title = "<s>" + title + "</s>"
 			}
-			sb.WriteString(fmt.Sprintf("%s %s\n", check, html.EscapeString(s.Title)))
+			sb.WriteString(fmt.Sprintf("%s %s\n", check, title))
 		}
 		sb.WriteString("\n")
 	}
@@ -134,7 +187,49 @@ func RenderTaskCard(task *models.Task, l *locales.Bundle) string {
 	return sb.String()
 }
 
-func RenderTaskListHeader(totalCount int, filterType, filterStatus string, l *locales.Bundle) string {
+func renderProgressBar(done, total int) string {
+	if total == 0 {
+		return ""
+	}
+	const barLen = 6
+	filled := (done * barLen) / total
+	if filled > barLen {
+		filled = barLen
+	}
+	empty := barLen - filled
+	return strings.Repeat("▓", filled) + strings.Repeat("░", empty)
+}
+
+func formatRelativeTime(t time.Time, l *locales.Bundle) string {
+	if t.IsZero() {
+		return l.Task.JustNow
+	}
+	diff := time.Since(t)
+	if diff < time.Minute {
+		return l.Task.JustNow
+	}
+	if diff < time.Hour {
+		mins := int(diff.Minutes())
+		if mins < 1 {
+			mins = 1
+		}
+		return fmt.Sprintf(l.Task.UpdatedLabel, fmt.Sprintf(l.Task.MinutesAgo, mins))
+	}
+	if diff < 24*time.Hour {
+		hours := int(diff.Hours())
+		if hours < 1 {
+			hours = 1
+		}
+		return fmt.Sprintf(l.Task.UpdatedLabel, fmt.Sprintf(l.Task.HoursAgo, hours))
+	}
+	days := int(diff.Hours() / 24)
+	if days < 1 {
+		days = 1
+	}
+	return fmt.Sprintf(l.Task.UpdatedLabel, fmt.Sprintf(l.Task.DaysAgo, days))
+}
+
+func RenderTaskListHeader(totalCount int, filterType, filterStatus, filterTag string, l *locales.Bundle) string {
 	typeDesc := l.Filters.AllTypes
 	if filterType == "BUG" {
 		typeDesc = l.Filters.Bugs
@@ -148,5 +243,10 @@ func RenderTaskListHeader(totalCount int, filterType, filterStatus string, l *lo
 		statusDesc = TaskStatusEmoji(s) + " " + TaskStatusName(s, l)
 	}
 
-	return fmt.Sprintf(l.View.ListHeader, totalCount, typeDesc, statusDesc)
+	tagDesc := l.Filters.AllTags
+	if filterTag != "" && filterTag != "ALL" {
+		tagDesc = "#" + strings.TrimPrefix(filterTag, "#")
+	}
+
+	return fmt.Sprintf(l.View.ListHeader, totalCount, typeDesc, statusDesc, tagDesc)
 }

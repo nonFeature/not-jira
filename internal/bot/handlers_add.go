@@ -204,7 +204,7 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 	dmText := fmt.Sprintf(l.Add.FormTitlePrompt,
 		draft.ID, TaskTypeName(draft.Type, l), html.EscapeString(sourceText))
 
-	dmMsg := tu.Message(tu.ID(senderID), dmText).WithParseMode(telego.ModeHTML)
+	dmMsg := tu.Message(tu.ID(senderID), dmText).WithParseMode(telego.ModeHTML).WithReplyMarkup(BuildCancelKeyboard("", l))
 	_, dmErr := SendMessageSafe(ctx, h.bot, dmMsg)
 
 	if dmErr != nil {

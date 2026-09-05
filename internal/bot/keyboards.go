@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"strings"
 
 	"not-jira/internal/emoji"
 	"not-jira/internal/locales"
@@ -118,6 +119,16 @@ func BuildTaskInlineKeyboard(task *models.Task, userID int64, isAdmin bool, isDe
 				))
 			}
 		} else if canManage {
+			if task.AssigneeID == userID {
+				assignRow = append(assignRow, emoji.MakeInlineButton(
+					l.Buttons.Unclaim,
+					fmt.Sprintf("unclaim:%s", task.ID),
+					"",
+					emoji.ID_USER,
+					"👤",
+					"danger",
+				))
+			}
 			assignRow = append(assignRow, emoji.MakeInlineButton(
 				l.Buttons.Transfer,
 				fmt.Sprintf("transfer:%s", task.ID),
@@ -141,8 +152,12 @@ func BuildTaskInlineKeyboard(task *models.Task, userID int64, isAdmin bool, isDe
 			})
 		}
 		rows = append(rows, []telego.InlineKeyboardButton{
-			emoji.MakeInlineButton(l.Buttons.AddSubtask, fmt.Sprintf("add_sub:%s", task.ID), "", emoji.ID_PLUS, "➕", ""),
-			emoji.MakeInlineButton(l.Buttons.AddComment, fmt.Sprintf("add_comm:%s", task.ID), "", emoji.ID_MESSAGES, "💬", ""),
+			emoji.MakeInlineButton(l.Buttons.Priority, fmt.Sprintf("pick_priority:%s", task.ID), "", emoji.ID_PRIORITY, "⚡️", ""),
+			emoji.MakeInlineButton(l.Buttons.Labels, fmt.Sprintf("edit_labels:%s", task.ID), "", emoji.ID_TAG, "🏷", ""),
+		})
+		rows = append(rows, []telego.InlineKeyboardButton{
+			emoji.MakeInlineButton(l.Buttons.AddSubtask, fmt.Sprintf("manage_sub:%s", task.ID), "", emoji.ID_PLUS, "➕", ""),
+			emoji.MakeInlineButton(l.Buttons.AddComment, fmt.Sprintf("manage_comm:%s", task.ID), "", emoji.ID_MESSAGES, "💬", ""),
 		})
 	}
 
@@ -171,6 +186,137 @@ func BuildTaskInlineKeyboard(task *models.Task, userID int64, isAdmin bool, isDe
 	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{InlineKeyboard: rows})
 }
 
+func BuildSubtasksManageKeyboard(task *models.Task, l *locales.Bundle) *telego.InlineKeyboardMarkup {
+	var rows [][]telego.InlineKeyboardButton
+
+	for _, sub := range task.Subtasks {
+		cleanTitle := emoji.StripCustomEmojis(sub.Title)
+		titleRunes := []rune(cleanTitle)
+		if len(titleRunes) > 25 {
+			cleanTitle = string(titleRunes[:22]) + "..."
+		}
+		prefix := "⬜️ "
+		if sub.IsDone {
+			prefix = "☑️ "
+		}
+		editBtn := emoji.MakeInlineButton(
+			prefix+cleanTitle,
+			fmt.Sprintf("edit_sub:%d:%s", sub.ID, task.ID),
+			"",
+			emoji.ID_PENCIL,
+			"✏️",
+			"",
+		)
+		delBtn := emoji.MakeInlineButton(
+			"",
+			fmt.Sprintf("del_sub:%d:%s", sub.ID, task.ID),
+			"",
+			emoji.ID_TRASH,
+			"🗑",
+			"danger",
+		)
+		rows = append(rows, []telego.InlineKeyboardButton{editBtn, delBtn})
+	}
+
+	// Action row: [➕ Добавить] [🗑 Очистить все]
+	var actionRow []telego.InlineKeyboardButton
+	actionRow = append(actionRow, emoji.MakeInlineButton(
+		l.Buttons.Add,
+		fmt.Sprintf("add_sub_prompt:%s", task.ID),
+		"",
+		emoji.ID_PLUS,
+		"➕",
+		"primary",
+	))
+	if len(task.Subtasks) > 0 {
+		actionRow = append(actionRow, emoji.MakeInlineButton(
+			l.Buttons.ClearAll,
+			fmt.Sprintf("clear_subs:%s", task.ID),
+			"",
+			emoji.ID_TRASH,
+			"🗑",
+			"danger",
+		))
+	}
+	rows = append(rows, actionRow)
+
+	// Back row: [« Назад]
+	rows = append(rows, []telego.InlineKeyboardButton{
+		emoji.MakeInlineButton(l.Buttons.Back, fmt.Sprintf("view:%s", task.ID), "", emoji.ID_ARROW_L, "⬅️", ""),
+	})
+
+	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{InlineKeyboard: rows})
+}
+
+func BuildCommentsManageKeyboard(task *models.Task, userID int64, isAdmin bool, l *locales.Bundle) *telego.InlineKeyboardMarkup {
+	var rows [][]telego.InlineKeyboardButton
+
+	for _, comm := range task.Comments {
+		cleanText := emoji.StripCustomEmojis(comm.Text)
+		cleanText = strings.ReplaceAll(cleanText, "\n", " ")
+		textRunes := []rune(cleanText)
+		if len(textRunes) > 22 {
+			cleanText = string(textRunes[:19]) + "..."
+		}
+		label := fmt.Sprintf("@%s: %s", comm.AuthorName, cleanText)
+		canEdit := isAdmin || (comm.AuthorID != 0 && comm.AuthorID == userID)
+		if canEdit {
+			editBtn := emoji.MakeInlineButton(
+				label,
+				fmt.Sprintf("edit_comm:%d:%s", comm.ID, task.ID),
+				"",
+				emoji.ID_PENCIL,
+				"✏️",
+				"",
+			)
+			delBtn := emoji.MakeInlineButton(
+				"",
+				fmt.Sprintf("del_comm:%d:%s", comm.ID, task.ID),
+				"",
+				emoji.ID_TRASH,
+				"🗑",
+				"danger",
+			)
+			rows = append(rows, []telego.InlineKeyboardButton{editBtn, delBtn})
+		} else {
+			btn := telego.InlineKeyboardButton{
+				Text:         "💬 " + label,
+				CallbackData: "noop",
+			}
+			rows = append(rows, []telego.InlineKeyboardButton{btn})
+		}
+	}
+
+	// Action row: [💬 Добавить] [🗑 Очистить все] (if admin)
+	var actionRow []telego.InlineKeyboardButton
+	actionRow = append(actionRow, emoji.MakeInlineButton(
+		l.Buttons.Add,
+		fmt.Sprintf("add_comm_prompt:%s", task.ID),
+		"",
+		emoji.ID_MESSAGES,
+		"💬",
+		"primary",
+	))
+	if isAdmin && len(task.Comments) > 0 {
+		actionRow = append(actionRow, emoji.MakeInlineButton(
+			l.Buttons.ClearAll,
+			fmt.Sprintf("clear_comms:%s", task.ID),
+			"",
+			emoji.ID_TRASH,
+			"🗑",
+			"danger",
+		))
+	}
+	rows = append(rows, actionRow)
+
+	// Back row: [« Назад]
+	rows = append(rows, []telego.InlineKeyboardButton{
+		emoji.MakeInlineButton(l.Buttons.Back, fmt.Sprintf("view:%s", task.ID), "", emoji.ID_ARROW_L, "⬅️", ""),
+	})
+
+	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{InlineKeyboard: rows})
+}
+
 func BuildTransferInviteKeyboard(taskID string, l *locales.Bundle) *telego.InlineKeyboardMarkup {
 	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{
 		InlineKeyboard: [][]telego.InlineKeyboardButton{
@@ -182,23 +328,27 @@ func BuildTransferInviteKeyboard(taskID string, l *locales.Bundle) *telego.Inlin
 	})
 }
 
-func BuildListKeyboard(tasks []models.Task, currentType, currentStatus string, page, totalPages int, l *locales.Bundle) *telego.InlineKeyboardMarkup {
+func BuildListKeyboard(tasks []models.Task, currentType, currentStatus, currentTag string, page, totalPages int, l *locales.Bundle) *telego.InlineKeyboardMarkup {
 	var rows [][]telego.InlineKeyboardButton
+
+	if currentTag == "" {
+		currentTag = "ALL"
+	}
 
 	// Type filters: ALL, BUG, IDEA
 	typeRow := []telego.InlineKeyboardButton{
-		emoji.MakeInlineButton(filterLabel(l.Filters.AllTypes, currentType == "ALL"), fmt.Sprintf("list:ALL:%s:0", currentStatus), "", "", "", ""),
-		emoji.MakeInlineButton(filterLabel(l.Filters.Bugs, currentType == "BUG"), fmt.Sprintf("list:BUG:%s:0", currentStatus), "", emoji.ID_BUG, "🪲", ""),
-		emoji.MakeInlineButton(filterLabel(l.Filters.Ideas, currentType == "IDEA"), fmt.Sprintf("list:IDEA:%s:0", currentStatus), "", emoji.ID_IDEA, "💡", ""),
+		emoji.MakeInlineButton(filterLabel(l.Filters.AllTypes, currentType == "ALL"), fmt.Sprintf("list:ALL:%s:%s:0", currentStatus, currentTag), "", "", "", ""),
+		emoji.MakeInlineButton(filterLabel(l.Filters.Bugs, currentType == "BUG"), fmt.Sprintf("list:BUG:%s:%s:0", currentStatus, currentTag), "", emoji.ID_BUG, "🪲", ""),
+		emoji.MakeInlineButton(filterLabel(l.Filters.Ideas, currentType == "IDEA"), fmt.Sprintf("list:IDEA:%s:%s:0", currentStatus, currentTag), "", emoji.ID_IDEA, "💡", ""),
 	}
 	rows = append(rows, typeRow)
 
 	// Status filters: ALL, NEW, IN_PROGRESS, DONE
 	statusRow := []telego.InlineKeyboardButton{
-		emoji.MakeInlineButton(filterLabel(l.Filters.AllStatuses, currentStatus == "ALL"), fmt.Sprintf("list:%s:ALL:0", currentType), "", "", "", ""),
-		emoji.MakeInlineButton(filterLabel(l.Filters.New, currentStatus == "NEW"), fmt.Sprintf("list:%s:NEW:0", currentType), "", emoji.ID_NEW, "🆕", ""),
-		emoji.MakeInlineButton(filterLabel(l.Filters.InProgress, currentStatus == "IN_PROGRESS"), fmt.Sprintf("list:%s:IN_PROGRESS:0", currentType), "", emoji.ID_GEAR, "⚙️", ""),
-		emoji.MakeInlineButton(filterLabel(l.Filters.Done, currentStatus == "DONE"), fmt.Sprintf("list:%s:DONE:0", currentType), "", emoji.ID_CHECK, "✅", ""),
+		emoji.MakeInlineButton(filterLabel(l.Filters.AllStatuses, currentStatus == "ALL"), fmt.Sprintf("list:%s:ALL:%s:0", currentType, currentTag), "", "", "", ""),
+		emoji.MakeInlineButton(filterLabel(l.Filters.New, currentStatus == "NEW"), fmt.Sprintf("list:%s:NEW:%s:0", currentType, currentTag), "", emoji.ID_NEW, "🆕", ""),
+		emoji.MakeInlineButton(filterLabel(l.Filters.InProgress, currentStatus == "IN_PROGRESS"), fmt.Sprintf("list:%s:IN_PROGRESS:%s:0", currentType, currentTag), "", emoji.ID_GEAR, "⚙️", ""),
+		emoji.MakeInlineButton(filterLabel(l.Filters.Done, currentStatus == "DONE"), fmt.Sprintf("list:%s:DONE:%s:0", currentType, currentTag), "", emoji.ID_CHECK, "✅", ""),
 	}
 	rows = append(rows, statusRow)
 
@@ -222,7 +372,7 @@ func BuildListKeyboard(tasks []models.Task, currentType, currentStatus string, p
 	if page > 0 {
 		navRow = append(navRow, emoji.MakeInlineButton(
 			l.Buttons.PrevPage,
-			fmt.Sprintf("list:%s:%s:%d", currentType, currentStatus, page-1),
+			fmt.Sprintf("list:%s:%s:%s:%d", currentType, currentStatus, currentTag, page-1),
 			"",
 			emoji.ID_ARROW_L,
 			"⬅️",
@@ -239,7 +389,7 @@ func BuildListKeyboard(tasks []models.Task, currentType, currentStatus string, p
 	if page+1 < totalPages {
 		navRow = append(navRow, emoji.MakeInlineButton(
 			l.Buttons.NextPage,
-			fmt.Sprintf("list:%s:%s:%d", currentType, currentStatus, page+1),
+			fmt.Sprintf("list:%s:%s:%s:%d", currentType, currentStatus, currentTag, page+1),
 			"",
 			emoji.ID_ARROW_R,
 			"➡️",
@@ -247,6 +397,218 @@ func BuildListKeyboard(tasks []models.Task, currentType, currentStatus string, p
 		))
 	}
 	rows = append(rows, navRow)
+
+	// Bottom row with Tag filter and My Tasks
+	tagBtnText := l.Filters.AllTags
+	if currentTag != "" && currentTag != "ALL" {
+		tagBtnText = "#" + strings.TrimPrefix(currentTag, "#")
+	}
+
+	rows = append(rows, []telego.InlineKeyboardButton{
+		emoji.MakeInlineButton(tagBtnText, fmt.Sprintf("list_tags:%s:%s:%s:%d", currentType, currentStatus, currentTag, page), "", emoji.ID_TAG, "🏷", ""),
+		emoji.MakeInlineButton(l.Buttons.MyTasks, "my:assigned:0", "", emoji.ID_USER, "👤", ""),
+	})
+
+	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{InlineKeyboard: rows})
+}
+
+func BuildListTagsKeyboard(currentType, currentStatus, currentTag string, page int, availableTags []string, l *locales.Bundle) *telego.InlineKeyboardMarkup {
+	var rows [][]telego.InlineKeyboardButton
+
+	// All tags option
+	allLabel := l.Filters.AllTags
+	if currentTag == "" || currentTag == "ALL" {
+		allLabel = "• " + allLabel + " •"
+	}
+	rows = append(rows, []telego.InlineKeyboardButton{
+		emoji.MakeInlineButton(allLabel, fmt.Sprintf("list:%s:%s:ALL:0", currentType, currentStatus), "", emoji.ID_TAG, "🏷", ""),
+	})
+
+	// 2 tags per row
+	var tagRow []telego.InlineKeyboardButton
+	for _, tag := range availableTags {
+		cleanTag := strings.TrimSpace(strings.TrimPrefix(tag, "#"))
+		if cleanTag == "" {
+			continue
+		}
+		label := "#" + cleanTag
+		if strings.EqualFold(cleanTag, currentTag) {
+			label = "• " + label + " •"
+		}
+		tagRow = append(tagRow, emoji.MakeInlineButton(
+			label,
+			fmt.Sprintf("list:%s:%s:%s:0", currentType, currentStatus, cleanTag),
+			"",
+			emoji.ID_TAG,
+			"🏷",
+			"",
+		))
+		if len(tagRow) == 2 {
+			rows = append(rows, tagRow)
+			tagRow = nil
+		}
+	}
+	if len(tagRow) > 0 {
+		rows = append(rows, tagRow)
+	}
+
+	// Back button
+	rows = append(rows, []telego.InlineKeyboardButton{
+		emoji.MakeInlineButton(l.Buttons.Back, fmt.Sprintf("list:%s:%s:%s:%d", currentType, currentStatus, currentTag, page), "", emoji.ID_ARROW_L, "⬅️", ""),
+	})
+
+	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{InlineKeyboard: rows})
+}
+
+func BuildPriorityPickerKeyboard(taskID string, current models.TaskPriority, l *locales.Bundle) *telego.InlineKeyboardMarkup {
+	mark := func(p models.TaskPriority, label string) string {
+		if p == current {
+			return "• " + label + " •"
+		}
+		return label
+	}
+
+	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{
+		InlineKeyboard: [][]telego.InlineKeyboardButton{
+			{
+				emoji.MakeInlineButton(mark(models.PriorityP0, l.Task.P0), fmt.Sprintf("set_priority:%s:P0", taskID), "", emoji.ID_P0, "🔴", "danger"),
+				emoji.MakeInlineButton(mark(models.PriorityP1, l.Task.P1), fmt.Sprintf("set_priority:%s:P1", taskID), "", emoji.ID_P1, "🟡", ""),
+			},
+			{
+				emoji.MakeInlineButton(mark(models.PriorityP2, l.Task.P2), fmt.Sprintf("set_priority:%s:P2", taskID), "", emoji.ID_P2, "🔵", "primary"),
+				emoji.MakeInlineButton(mark(models.PriorityP3, l.Task.P3), fmt.Sprintf("set_priority:%s:P3", taskID), "", emoji.ID_P3, "⚪️", ""),
+			},
+			{
+				emoji.MakeInlineButton(l.Buttons.Back, fmt.Sprintf("view:%s", taskID), "", emoji.ID_ARROW_L, "⬅️", ""),
+			},
+		},
+	})
+}
+
+func BuildTaskLabelsKeyboard(task *models.Task, availableTags []string, l *locales.Bundle) *telego.InlineKeyboardMarkup {
+	var rows [][]telego.InlineKeyboardButton
+
+	var tagRow []telego.InlineKeyboardButton
+	for _, rawTag := range availableTags {
+		cleanTag := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(rawTag, "#")))
+		if cleanTag == "" {
+			continue
+		}
+		btnLabel := "#" + cleanTag
+		has := task.HasLabel(cleanTag)
+		if has {
+			btnLabel = "✅ #" + cleanTag
+		}
+		btnType := ""
+		if has {
+			btnType = "primary"
+		}
+		tagRow = append(tagRow, emoji.MakeInlineButton(
+			btnLabel,
+			fmt.Sprintf("toggle_label:%s:%s", task.ID, cleanTag),
+			"",
+			emoji.ID_TAG,
+			"🏷",
+			btnType,
+		))
+		if len(tagRow) == 2 {
+			rows = append(rows, tagRow)
+			tagRow = nil
+		}
+	}
+	if len(tagRow) > 0 {
+		rows = append(rows, tagRow)
+	}
+
+	// Action row: [✏️ Ввести вручную] [🗑 Очистить]
+	actionRow := []telego.InlineKeyboardButton{
+		emoji.MakeInlineButton(l.Buttons.EditLabelsManual, fmt.Sprintf("edit_labels_manual:%s", task.ID), "", emoji.ID_PENCIL, "✏️", ""),
+		emoji.MakeInlineButton(l.Buttons.ClearLabels, fmt.Sprintf("clear_labels:%s", task.ID), "", emoji.ID_TRASH, "🗑", "danger"),
+	}
+	rows = append(rows, actionRow)
+
+	// Back button
+	rows = append(rows, []telego.InlineKeyboardButton{
+		emoji.MakeInlineButton(l.Buttons.Back, fmt.Sprintf("view:%s", task.ID), "", emoji.ID_ARROW_L, "⬅️", ""),
+	})
+
+	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{InlineKeyboard: rows})
+}
+
+func BuildCancelKeyboard(taskID string, l *locales.Bundle) *telego.InlineKeyboardMarkup {
+	callbackData := "cancel_fsm"
+	if taskID != "" {
+		callbackData = "cancel_fsm:" + taskID
+	}
+	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{
+		InlineKeyboard: [][]telego.InlineKeyboardButton{
+			{
+				emoji.MakeInlineButton(l.Buttons.Cancel, callbackData, "", emoji.ID_CROSS, "❌", "danger"),
+			},
+		},
+	})
+}
+
+func BuildMyTasksKeyboard(tasks []models.Task, currentTab string, page, totalPages int, l *locales.Bundle) *telego.InlineKeyboardMarkup {
+	var rows [][]telego.InlineKeyboardButton
+
+	// Tab selection row: [ На мне ] | [ Созданные мной ]
+	tabRow := []telego.InlineKeyboardButton{
+		emoji.MakeInlineButton(filterLabel(l.Filters.MyAssigned, currentTab == "assigned"), "my:assigned:0", "", emoji.ID_USER, "👤", ""),
+		emoji.MakeInlineButton(filterLabel(l.Filters.MyCreated, currentTab == "created"), "my:created:0", "", emoji.ID_WRITE, "✍️", ""),
+	}
+	rows = append(rows, tabRow)
+
+	// Task buttons for current page
+	for _, t := range tasks {
+		cleanTitle := emoji.StripCustomEmojis(t.Title)
+		titleRunes := []rune(cleanTitle)
+		if len(titleRunes) > 30 {
+			cleanTitle = string(titleRunes[:27]) + "..."
+		}
+		btnText := fmt.Sprintf("[%s] %s %s", t.ID, TaskStatusUnicode(t.Status), cleanTitle)
+		btn := telego.InlineKeyboardButton{
+			Text:         btnText,
+			CallbackData: fmt.Sprintf("view:%s", t.ID),
+		}
+		rows = append(rows, []telego.InlineKeyboardButton{btn})
+	}
+
+	// Pagination row
+	var navRow []telego.InlineKeyboardButton
+	if page > 0 {
+		navRow = append(navRow, emoji.MakeInlineButton(
+			l.Buttons.PrevPage,
+			fmt.Sprintf("my:%s:%d", currentTab, page-1),
+			"",
+			emoji.ID_ARROW_L,
+			"⬅️",
+			"",
+		))
+	}
+
+	pageLabel := fmt.Sprintf(l.View.PageFormat, page+1, max(1, totalPages))
+	navRow = append(navRow, telego.InlineKeyboardButton{
+		Text:         pageLabel,
+		CallbackData: "noop",
+	})
+
+	if page+1 < totalPages {
+		navRow = append(navRow, emoji.MakeInlineButton(
+			l.Buttons.NextPage,
+			fmt.Sprintf("my:%s:%d", currentTab, page+1),
+			"",
+			emoji.ID_ARROW_R,
+			"➡️",
+			"",
+		))
+	}
+	rows = append(rows, navRow)
+
+	// Return to full list button
+	rows = append(rows, []telego.InlineKeyboardButton{
+		emoji.MakeInlineButton(l.Filters.AllStatuses, "list:ALL:ALL:ALL:0", "", emoji.ID_CLIPBOARD, "📋", ""),
+	})
 
 	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{InlineKeyboard: rows})
 }

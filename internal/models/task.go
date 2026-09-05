@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type TaskType string
 
@@ -82,14 +85,122 @@ type Task struct {
 	MessageLink      string     `json:"message_link"`
 	AuthorID         int64      `json:"author_id"`
 	AuthorUsername   string     `json:"author_username"`
-	AssigneeID       int64      `json:"assignee_id,omitempty"`
-	AssigneeUsername string     `json:"assignee_username,omitempty"`
-	IsArchived       bool       `json:"is_archived"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	AssigneeID       int64        `json:"assignee_id,omitempty"`
+	AssigneeUsername string       `json:"assignee_username,omitempty"`
+	IsArchived       bool         `json:"is_archived"`
+	Priority         TaskPriority `json:"priority"`
+	Labels           []string     `json:"labels,omitempty"`
+	CreatedAt        time.Time    `json:"created_at"`
+	UpdatedAt        time.Time    `json:"updated_at"`
 
 	Subtasks []Subtask `json:"subtasks,omitempty"`
 	Comments []Comment `json:"comments,omitempty"`
+}
+
+type TaskPriority string
+
+const (
+	PriorityP0 TaskPriority = "P0" // 🔴 Блокер
+	PriorityP1 TaskPriority = "P1" // 🟡 Высокий
+	PriorityP2 TaskPriority = "P2" // 🔵 Обычный
+	PriorityP3 TaskPriority = "P3" // ⚪️ Низкий
+)
+
+func (p TaskPriority) Emoji() string {
+	switch p {
+	case PriorityP0:
+		return "🔴"
+	case PriorityP1:
+		return "🟡"
+	case PriorityP2:
+		return "🔵"
+	case PriorityP3:
+		return "⚪️"
+	default:
+		return "🔵"
+	}
+}
+
+func (p TaskPriority) Russian() string {
+	switch p {
+	case PriorityP0:
+		return "Блокер"
+	case PriorityP1:
+		return "Высокий"
+	case PriorityP2:
+		return "Обычный"
+	case PriorityP3:
+		return "Низкий"
+	default:
+		return "Обычный"
+	}
+}
+
+func (p TaskPriority) English() string {
+	switch p {
+	case PriorityP0:
+		return "Blocker"
+	case PriorityP1:
+		return "High"
+	case PriorityP2:
+		return "Normal"
+	case PriorityP3:
+		return "Low"
+	default:
+		return "Normal"
+	}
+}
+
+func (t *Task) FormattedLabels() string {
+	if len(t.Labels) == 0 {
+		return ""
+	}
+	var res []string
+	for _, l := range t.Labels {
+		clean := l
+		if clean != "" {
+			if clean[0] != '#' {
+				clean = "#" + clean
+			}
+			res = append(res, clean)
+		}
+	}
+	if len(res) == 0 {
+		return ""
+	}
+	result := ""
+	for i, tag := range res {
+		if i > 0 {
+			result += " "
+		}
+		result += tag
+	}
+	return result
+}
+
+func (t *Task) HasLabel(label string) bool {
+	clean := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(label, "#")))
+	for _, l := range t.Labels {
+		if strings.ToLower(strings.TrimSpace(strings.TrimPrefix(l, "#"))) == clean {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *Task) ToggleLabel(label string) bool {
+	clean := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(label, "#")))
+	if clean == "" {
+		return false
+	}
+	for i, l := range t.Labels {
+		if strings.ToLower(strings.TrimSpace(strings.TrimPrefix(l, "#"))) == clean {
+			t.Labels = append(t.Labels[:i], t.Labels[i+1:]...)
+			return false
+		}
+	}
+	t.Labels = append(t.Labels, clean)
+	return true
 }
 
 func (t *Task) IsOpen() bool {

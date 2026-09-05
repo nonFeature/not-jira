@@ -64,6 +64,14 @@ var (
 	ID_SUB_DONE = "5251391302330787578" // ☑️ Subtask checked
 	ID_BOX = "5251483382134646909" // 📦 Archive / Box
 	ID_USER = "5253956862390345938" // 👤 Assignee / Person
+	ID_TAG = "5253876499257271563" // 🏷️ Label / Tag
+	ID_PRIORITY = "5253449291745241072" // ⚡️ Priority button
+	ID_P0 = "5251665716381262011" // 🔴 Blocker / P0
+	ID_P1 = "5253657614838965029" // 🟡 High / P1
+	ID_P2 = "5251552303474843852" // 🔵 Normal / P2
+	ID_P3 = "5251467138568333349" // ⚪️ Low / P3
+	ID_TRASH = "5253830659071322395" // 🗑️ Delete / Clear / Trash
+	ID_WRITE = "5251444916407542521" // ✍️ Created by me tab in /my
 )
 
 // E wraps a fallback emoji into <tg-emoji emoji-id="..."> tag if custom emojis are enabled and ID is set.
@@ -104,6 +112,14 @@ func SubEmpty() string { return E(ID_SUB_EMPTY, "⬜️") }
 func SubDone() string { return E(ID_SUB_DONE, "☑️") }
 func Box() string { return E(ID_BOX, "📦") }
 func User() string { return E(ID_USER, "👤") }
+func Tag() string { return E(ID_TAG, "🏷️") }
+func Priority() string { return E(ID_PRIORITY, "⚡️") }
+func P0() string { return E(ID_P0, "🔴") }
+func P1() string { return E(ID_P1, "🟡") }
+func P2() string { return E(ID_P2, "🔵") }
+func P3() string { return E(ID_P3, "⚪️") }
+func Trash() string { return E(ID_TRASH, "🗑️") }
+func Write() string { return E(ID_WRITE, "✍️") }
 
 // FallbackForID returns standard Unicode emoji for given custom emoji ID.
 func FallbackForID(emojiID string) string {
@@ -169,6 +185,22 @@ func FallbackForID(emojiID string) string {
 		return "📦"
 	case ID_USER:
 		return "👤"
+	case ID_TAG:
+		return "🏷️"
+	case ID_PRIORITY:
+		return "⚡️"
+	case ID_P0:
+		return "🔴"
+	case ID_P1:
+		return "🟡"
+	case ID_P2:
+		return "🔵"
+	case ID_P3:
+		return "⚪️"
+	case ID_TRASH:
+		return "🗑"
+	case ID_WRITE:
+		return "✍️"
 	default:
 		return ""
 	}
@@ -185,11 +217,18 @@ func MakeInlineButton(text, callbackData, url, emojiID, fallbackEmoji, style str
 	}
 
 	if useCustomEmoji.Load() && emojiID != "" {
+		if cleanText == "" {
+			cleanText = " "
+		}
 		btn.Text = cleanText
 		btn.IconCustomEmojiID = emojiID
 	} else {
 		if fallbackEmoji != "" {
-			btn.Text = fallbackEmoji + " " + cleanText
+			if cleanText != "" {
+				btn.Text = fallbackEmoji + " " + cleanText
+			} else {
+				btn.Text = fallbackEmoji
+			}
 		} else {
 			btn.Text = cleanText
 		}

@@ -172,7 +172,7 @@ func (s *BotService) dispatchUpdate(ctx context.Context, update telego.Update) {
 			return
 		}
 
-		if strings.HasPrefix(data, "list:") || strings.HasPrefix(data, "view:") || data == "noop" {
+		if strings.HasPrefix(data, "list:") || strings.HasPrefix(data, "list_tags:") || strings.HasPrefix(data, "view:") || strings.HasPrefix(data, "my:") || data == "noop" {
 			s.viewHandler.HandleCallback(ctx, query)
 			return
 		}
@@ -207,8 +207,12 @@ func (s *BotService) dispatchUpdate(ctx context.Context, update telego.Update) {
 			s.addHandler.Handle(ctx, msg)
 		case "/list":
 			s.viewHandler.HandleList(ctx, msg)
+		case "/my":
+			s.viewHandler.HandleMyTasks(ctx, msg)
 		case "/view":
 			s.viewHandler.HandleView(ctx, msg)
+		case "/cancel":
+			s.editHandler.HandleCancel(ctx, msg)
 		}
 	}
 }

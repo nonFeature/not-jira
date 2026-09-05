@@ -14,8 +14,10 @@ type Bundle struct {
 }
 
 type Common struct {
-	AdminOnly string
-	Cancelled string
+	AdminOnly       string
+	Cancelled       string
+	OnlyTextAllowed string
+	NoActiveAction  string
 }
 
 type Start struct {
@@ -46,12 +48,20 @@ type Add struct {
 type Edit struct {
 	PromptEditTitle    string
 	PromptEditDesc     string
-	PromptAddSubtask   string
-	PromptAddComment   string
-	TitleUpdated       string
-	DescUpdated        string
+	PromptAddSubtask       string
+	PromptEditSubtask      string
+	PromptAddComment       string
+	PromptEditComment      string
+	TitleUpdated           string
+	DescUpdated            string
 	SubtaskAdded           string
+	SubtaskUpdated         string
+	SubtaskDeletedAlert    string
+	SubtasksClearedAlert   string
 	CommentAdded           string
+	CommentUpdated         string
+	CommentDeletedAlert    string
+	CommentsClearedAlert   string
 	StatusChangedAlert     string
 	StatusReopenedAlert    string
 	TaskArchivedAlert      string
@@ -62,23 +72,39 @@ type Edit struct {
 	TransferAcceptedNotify string
 	TransferRejectedNotify string
 	TaskClaimedNotify      string
+	PromptEditLabels       string
+	LabelsUpdated          string
+	LabelToggledOnAlert    string
+	LabelToggledOffAlert   string
+	LabelsClearedAlert     string
+	PriorityChangedAlert   string
+	TaskUnclaimedAlert     string
 }
 
 type View struct {
-	UsageHint  string
-	NotFound   string
-	ListHeader string
-	PageFormat string
+	UsageHint     string
+	NotFound      string
+	ListHeader    string
+	MyTasksHeader string
+	NoMyTasks     string
+	PageFormat    string
 }
 
 type Task struct {
 	Header          string
 	StatusLabel     string
+	PriorityLabel   string
+	LabelsLabel     string
 	AuthorLabel     string
 	AssigneeLabel   string
 	UnassignedLabel string
 	ArchivedBadge   string
 	CreatedLabel    string
+	UpdatedLabel    string
+	JustNow         string
+	MinutesAgo      string
+	HoursAgo        string
+	DaysAgo         string
 	DescLabel       string
 	SubtasksLabel   string
 	CommentsLabel   string
@@ -88,6 +114,10 @@ type Task struct {
 	StatusProgress  string
 	StatusDone      string
 	StatusRejected  string
+	P0              string
+	P1              string
+	P2              string
+	P3              string
 }
 
 type Buttons struct {
@@ -100,15 +130,27 @@ type Buttons struct {
 	Transfer     string
 	AcceptTask   string
 	RejectTask   string
+	Priority     string
+	Labels       string
+	MyTasks      string
 	EditTitle    string
 	EditDesc     string
 	AddSubtask   string
 	AddComment   string
 	OriginalPost string
 	Refresh      string
-	PrevPage     string
-	NextPage     string
-	OpenDM       string
+	PrevPage         string
+	NextPage         string
+	OpenDM           string
+	EditLabelsManual string
+	ClearLabels      string
+	Back             string
+	Unclaim          string
+	TagFilter        string
+	Cancel           string
+	BackToTask       string
+	ClearAll         string
+	Add              string
 }
 
 type Filters struct {
@@ -119,6 +161,9 @@ type Filters struct {
 	New         string
 	InProgress  string
 	Done        string
+	MyAssigned  string
+	MyCreated   string
+	AllTags     string
 }
 
 type Notifications struct {

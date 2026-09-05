@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -50,6 +51,8 @@ func (s *SQLiteStorage) initSchema() error {
 			assignee_id INTEGER NOT NULL DEFAULT 0,
 			assignee_username TEXT NOT NULL DEFAULT '',
 			is_archived INTEGER NOT NULL DEFAULT 0,
+			priority TEXT NOT NULL DEFAULT 'P2',
+			labels TEXT NOT NULL DEFAULT '',
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		);`,
@@ -91,10 +94,13 @@ func (s *SQLiteStorage) initSchema() error {
 	_, _ = s.db.Exec("ALTER TABLE tasks ADD COLUMN assignee_id INTEGER NOT NULL DEFAULT 0;")
 	_, _ = s.db.Exec("ALTER TABLE tasks ADD COLUMN assignee_username TEXT NOT NULL DEFAULT '';")
 	_, _ = s.db.Exec("ALTER TABLE tasks ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0;")
+	_, _ = s.db.Exec("ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'P2';")
+	_, _ = s.db.Exec("ALTER TABLE tasks ADD COLUMN labels TEXT NOT NULL DEFAULT '';")
 
 	createIndexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(type);`,
 		`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);`,
+		`CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);`,
 		`CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(is_archived, status, updated_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username COLLATE NOCASE);`,
 	}
@@ -123,19 +129,53 @@ func (s *SQLiteStorage) GetNextTaskID(ctx context.Context, taskType models.TaskT
 	return id, nextNum, nil
 }
 
+func encodeLabels(labels []string) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	var clean []string
+	for _, l := range labels {
+		t := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(l, "#")))
+		if t != "" {
+			clean = append(clean, t)
+		}
+	}
+	return strings.Join(clean, ",")
+}
+
+func decodeLabels(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	var res []string
+	for _, p := range parts {
+		t := strings.TrimSpace(p)
+		if t != "" {
+			res = append(res, t)
+		}
+	}
+	return res
+}
+
 func (s *SQLiteStorage) CreateTask(ctx context.Context, task *models.Task) error {
 	now := time.Now().UTC()
 	if task.CreatedAt.IsZero() {
 		task.CreatedAt = now
 	}
 	task.UpdatedAt = now
+	if task.Priority == "" {
+		task.Priority = models.PriorityP2
+	}
+	labelsStr := encodeLabels(task.Labels)
 
 	query := `INSERT INTO tasks (
 		id, num, type, title, description, status,
 		chat_id, topic_id, message_id, message_link,
 		author_id, author_username, assignee_id, assignee_username, is_archived,
+		priority, labels,
 		created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	archivedInt := 0
 	if task.IsArchived {
@@ -146,6 +186,7 @@ func (s *SQLiteStorage) CreateTask(ctx context.Context, task *models.Task) error
 		task.ID, task.Num, task.Type, task.Title, task.Description, task.Status,
 		task.ChatID, task.TopicID, task.MessageID, task.MessageLink,
 		task.AuthorID, task.AuthorUsername, task.AssigneeID, task.AssigneeUsername, archivedInt,
+		string(task.Priority), labelsStr,
 		task.CreatedAt, task.UpdatedAt,
 	)
 	return err
@@ -156,16 +197,19 @@ func (s *SQLiteStorage) GetTask(ctx context.Context, id string) (*models.Task, e
 		id, num, type, title, description, status,
 		chat_id, topic_id, message_id, message_link,
 		author_id, author_username, assignee_id, assignee_username, is_archived,
+		priority, labels,
 		created_at, updated_at
 	FROM tasks WHERE id = ? COLLATE NOCASE`
 
 	row := s.db.QueryRowContext(ctx, query, id)
 	var task models.Task
 	var isArchivedInt int
+	var priorityStr, labelsStr string
 	err := row.Scan(
 		&task.ID, &task.Num, &task.Type, &task.Title, &task.Description, &task.Status,
 		&task.ChatID, &task.TopicID, &task.MessageID, &task.MessageLink,
 		&task.AuthorID, &task.AuthorUsername, &task.AssigneeID, &task.AssigneeUsername, &isArchivedInt,
+		&priorityStr, &labelsStr,
 		&task.CreatedAt, &task.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -175,6 +219,11 @@ func (s *SQLiteStorage) GetTask(ctx context.Context, id string) (*models.Task, e
 		return nil, err
 	}
 	task.IsArchived = (isArchivedInt == 1)
+	task.Priority = models.TaskPriority(priorityStr)
+	if task.Priority == "" {
+		task.Priority = models.PriorityP2
+	}
+	task.Labels = decodeLabels(labelsStr)
 
 	// Fetch subtasks
 	subtasks, err := s.GetSubtasks(ctx, task.ID)
@@ -199,16 +248,22 @@ func (s *SQLiteStorage) UpdateTask(ctx context.Context, task *models.Task) error
 	if task.IsArchived {
 		archivedInt = 1
 	}
+	if task.Priority == "" {
+		task.Priority = models.PriorityP2
+	}
+	labelsStr := encodeLabels(task.Labels)
 
 	query := `UPDATE tasks SET
 		title = ?, description = ?, status = ?,
 		assignee_id = ?, assignee_username = ?, is_archived = ?,
+		priority = ?, labels = ?,
 		updated_at = ?
 	WHERE id = ?`
 
 	_, err := s.db.ExecContext(ctx, query,
 		task.Title, task.Description, task.Status,
 		task.AssigneeID, task.AssigneeUsername, archivedInt,
+		string(task.Priority), labelsStr,
 		task.UpdatedAt, task.ID,
 	)
 	return err
@@ -238,6 +293,19 @@ func (s *SQLiteStorage) ListTasks(ctx context.Context, filter storage.TaskFilter
 		whereClauses = append(whereClauses, "assignee_id = ?")
 		args = append(args, *filter.AssigneeID)
 	}
+	if filter.AuthorID != nil {
+		whereClauses = append(whereClauses, "author_id = ?")
+		args = append(args, *filter.AuthorID)
+	}
+	if filter.Priority != nil {
+		whereClauses = append(whereClauses, "priority = ?")
+		args = append(args, *filter.Priority)
+	}
+	if filter.Label != "" {
+		cleanLabel := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(filter.Label, "#")))
+		whereClauses = append(whereClauses, "(',' || labels || ',') LIKE ?")
+		args = append(args, "%,"+cleanLabel+",%")
+	}
 
 	whereSQL := ""
 	if len(whereClauses) > 0 {
@@ -256,6 +324,7 @@ func (s *SQLiteStorage) ListTasks(ctx context.Context, filter storage.TaskFilter
 		id, num, type, title, description, status,
 		chat_id, topic_id, message_id, message_link,
 		author_id, author_username, assignee_id, assignee_username, is_archived,
+		priority, labels,
 		created_at, updated_at
 	FROM tasks` + whereSQL + " ORDER BY created_at DESC LIMIT ? OFFSET ?"
 
@@ -270,15 +339,22 @@ func (s *SQLiteStorage) ListTasks(ctx context.Context, filter storage.TaskFilter
 	for rows.Next() {
 		var t models.Task
 		var isArchivedInt int
+		var priorityStr, labelsStr string
 		if err := rows.Scan(
 			&t.ID, &t.Num, &t.Type, &t.Title, &t.Description, &t.Status,
 			&t.ChatID, &t.TopicID, &t.MessageID, &t.MessageLink,
 			&t.AuthorID, &t.AuthorUsername, &t.AssigneeID, &t.AssigneeUsername, &isArchivedInt,
+			&priorityStr, &labelsStr,
 			&t.CreatedAt, &t.UpdatedAt,
 		); err != nil {
 			return nil, 0, err
 		}
 		t.IsArchived = (isArchivedInt == 1)
+		t.Priority = models.TaskPriority(priorityStr)
+		if t.Priority == "" {
+			t.Priority = models.PriorityP2
+		}
+		t.Labels = decodeLabels(labelsStr)
 		tasks = append(tasks, t)
 	}
 
@@ -302,6 +378,36 @@ func (s *SQLiteStorage) ArchiveInactiveClosedTasks(ctx context.Context, inactive
 		return 0, err
 	}
 	return rowsAffected, nil
+}
+
+func (s *SQLiteStorage) GetAllLabels(ctx context.Context) ([]string, error) {
+	query := `SELECT labels FROM tasks WHERE labels != '' AND is_archived = 0`
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tagMap := make(map[string]struct{})
+	for rows.Next() {
+		var lStr string
+		if err := rows.Scan(&lStr); err != nil {
+			continue
+		}
+		for _, tag := range decodeLabels(lStr) {
+			tagMap[tag] = struct{}{}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make([]string, 0, len(tagMap))
+	for t := range tagMap {
+		result = append(result, t)
+	}
+	sort.Strings(result)
+	return result, nil
 }
 
 func (s *SQLiteStorage) SetTaskUpdatedAt(ctx context.Context, id string, t time.Time) error {
@@ -349,6 +455,16 @@ func (s *SQLiteStorage) DeleteSubtask(ctx context.Context, id int64) error {
 	return err
 }
 
+func (s *SQLiteStorage) UpdateSubtask(ctx context.Context, id int64, title string) error {
+	_, err := s.db.ExecContext(ctx, "UPDATE subtasks SET title = ? WHERE id = ?", title, id)
+	return err
+}
+
+func (s *SQLiteStorage) ClearSubtasks(ctx context.Context, taskID string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM subtasks WHERE task_id = ?", taskID)
+	return err
+}
+
 func (s *SQLiteStorage) GetSubtasks(ctx context.Context, taskID string) ([]models.Subtask, error) {
 	rows, err := s.db.QueryContext(ctx, "SELECT id, task_id, title, is_done, created_at FROM subtasks WHERE task_id = ? ORDER BY id ASC", taskID)
 	if err != nil {
@@ -386,6 +502,21 @@ func (s *SQLiteStorage) AddComment(ctx context.Context, taskID string, authorID 
 		Text:       text,
 		CreatedAt:  now,
 	}, nil
+}
+
+func (s *SQLiteStorage) UpdateComment(ctx context.Context, id int64, text string) error {
+	_, err := s.db.ExecContext(ctx, "UPDATE comments SET text = ? WHERE id = ?", text, id)
+	return err
+}
+
+func (s *SQLiteStorage) DeleteComment(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM comments WHERE id = ?", id)
+	return err
+}
+
+func (s *SQLiteStorage) ClearComments(ctx context.Context, taskID string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM comments WHERE task_id = ?", taskID)
+	return err
 }
 
 func (s *SQLiteStorage) GetComments(ctx context.Context, taskID string) ([]models.Comment, error) {

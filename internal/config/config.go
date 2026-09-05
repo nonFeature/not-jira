@@ -13,6 +13,7 @@ type Config struct {
 	Telegram TelegramConfig `yaml:"telegram"`
 	Database DatabaseConfig `yaml:"database"`
 	AI       AIConfig       `yaml:"ai"`
+	Labels   []string       `yaml:"labels"`
 }
 
 type TelegramConfig struct {
@@ -119,6 +120,10 @@ func Load(path string) (*Config, error) {
 	}
 	if aiModel := os.Getenv("AI_MODEL"); aiModel != "" {
 		cfg.AI.Model = aiModel
+	}
+
+	if len(cfg.Labels) == 0 {
+		cfg.Labels = []string{"frontend", "backend", "auth", "ui", "api", "db", "devops"}
 	}
 
 	if cfg.Telegram.Token == "" {

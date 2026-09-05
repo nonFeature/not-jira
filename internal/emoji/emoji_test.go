@@ -2,6 +2,7 @@ package emoji
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/mymmrac/telego"
@@ -74,26 +75,70 @@ func TestIsCustomEmojiError(t *testing.T) {
 }
 
 func TestBoxAndUser(t *testing.T) {
+	SetCustomEmojiEnabled(false)
+	if Box() != "📦" {
+		t.Errorf("expected 📦 when disabled, got %q", Box())
+	}
+	if User() != "👤" {
+		t.Errorf("expected 👤 when disabled, got %q", User())
+	}
+	if Tag() != "🏷️" {
+		t.Errorf("expected 🏷️ when disabled, got %q", Tag())
+	}
+	if Priority() != "⚡️" {
+		t.Errorf("expected ⚡️ when disabled, got %q", Priority())
+	}
+
 	SetCustomEmojiEnabled(true)
 	defer SetCustomEmojiEnabled(true)
 
-	// Since ID_BOX and ID_USER are currently empty, they should return fallback unicode emojis
-	if Box() != "📦" {
-		t.Errorf("expected 📦, got %q", Box())
+	if !strings.Contains(Box(), "5251483382134646909") {
+		t.Errorf("expected custom emoji for Box, got %q", Box())
 	}
-	if User() != "👤" {
-		t.Errorf("expected 👤, got %q", User())
+	if !strings.Contains(User(), "5253956862390345938") {
+		t.Errorf("expected custom emoji for User, got %q", User())
+	}
+	if !strings.Contains(Tag(), "5253876499257271563") {
+		t.Errorf("expected custom emoji for Tag, got %q", Tag())
+	}
+	if !strings.Contains(Priority(), "5253449291745241072") {
+		t.Errorf("expected custom emoji for Priority, got %q", Priority())
+	}
+	if !strings.Contains(P0(), "5251665716381262011") {
+		t.Errorf("expected custom emoji for P0, got %q", P0())
 	}
 
 	// Test FallbackForID
 	if FallbackForID(ID_CHECK) != "✅" {
 		t.Errorf("expected ✅ for ID_CHECK, got %q", FallbackForID(ID_CHECK))
 	}
+	// Test FallbackForID with configured ID
+	ID_TRASH = "trash_123"
+	defer func() { ID_TRASH = "" }()
+	if FallbackForID("trash_123") != "🗑" {
+		t.Errorf("expected 🗑 for ID_TRASH, got %q", FallbackForID("trash_123"))
+	}
+	ID_WRITE = "write_123"
+	defer func() { ID_WRITE = "" }()
+	if FallbackForID("write_123") != "✍️" {
+		t.Errorf("expected ✍️ for ID_WRITE, got %q", FallbackForID("write_123"))
+	}
 	if FallbackForID("") != "" {
 		t.Errorf("expected empty string for empty ID, got %q", FallbackForID(""))
 	}
 	if FallbackForID("unknown_id") != "" {
 		t.Errorf("expected empty string for unknown ID, got %q", FallbackForID("unknown_id"))
+	}
+
+	ID_TRASH = ""
+	ID_WRITE = ""
+
+	// Test new accessors when ID is empty (fallback to unicode)
+	if Trash() != "🗑" {
+		t.Errorf("expected 🗑, got %q", Trash())
+	}
+	if Write() != "✍️" {
+		t.Errorf("expected ✍️, got %q", Write())
 	}
 }
 
