@@ -1,4 +1,4 @@
-# not-jira
+# not-jira <img src="not-jira.webp" height="30" align="right" alt="not-jira logo" />
 
 Telegram-бот для трекинга багов и идей в форумах. Задачи собираются из топиков, а управление ими происходит в личных сообщениях с ботом.
 
