@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 
@@ -37,7 +38,7 @@ func (h *ViewHandler) HandleList(ctx context.Context, msg *telego.Message) {
 	// Always send the list strictly to the user's private messages
 	targetChatID := msg.From.ID
 	l := locales.ForUser(msg.From.LanguageCode)
-	h.renderList(ctx, targetChatID, 0, "ALL", "ALL", "ALL", 0, msg, l)
+	h.renderList(ctx, targetChatID, 0, "ALL", "ALL", "ALL", 0, msg.From.ID, msg, l)
 }
 
 func (h *ViewHandler) HandleView(ctx context.Context, msg *telego.Message) {
@@ -93,7 +94,7 @@ func (h *ViewHandler) HandleCallback(ctx context.Context, query *telego.Callback
 		if filterType != "" && filterStatus != "" {
 			chatID := query.Message.GetChat().ID
 			msgID := query.Message.GetMessageID()
-			h.renderList(ctx, chatID, msgID, filterType, filterStatus, filterTag, page, nil, l)
+			h.renderList(ctx, chatID, msgID, filterType, filterStatus, filterTag, page, query.From.ID, nil, l)
 		}
 		_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID))
 		return
@@ -148,7 +149,7 @@ func (h *ViewHandler) HandleCallback(ctx context.Context, query *telego.Callback
 	}
 }
 
-func (h *ViewHandler) renderList(ctx context.Context, chatID int64, editMsgID int, filterType, filterStatus, filterTag string, page int, originMsg *telego.Message, l *locales.Bundle) {
+func (h *ViewHandler) renderList(ctx context.Context, chatID int64, editMsgID int, filterType, filterStatus, filterTag string, page int, userID int64, originMsg *telego.Message, l *locales.Bundle) {
 	var filter storage.TaskFilter
 	if filterType != "ALL" {
 		t := models.TaskType(filterType)
@@ -165,7 +166,8 @@ func (h *ViewHandler) renderList(ctx context.Context, chatID int64, editMsgID in
 	offset := page * PageSize
 	tasks, totalCount, err := h.storage.ListTasks(ctx, filter, offset, PageSize)
 	if err != nil {
-		_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(chatID), fmt.Sprintf("❌ Error: %v", err)))
+		log.Printf("[ViewHandler ERROR] Failed to list tasks: %v", err)
+		_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(chatID), "❌ Ошибка при загрузке списка задач."))
 		return
 	}
 
@@ -174,8 +176,16 @@ func (h *ViewHandler) renderList(ctx context.Context, chatID int64, editMsgID in
 		totalPages = 1
 	}
 
+	showMyTasks := h.cfg.Telegram.IsAdmin(userID) || h.cfg.Telegram.IsDev(userID)
+	if !showMyTasks {
+		_, count, err := h.storage.ListTasks(ctx, storage.TaskFilter{AssigneeID: &userID}, 0, 1)
+		if err == nil && count > 0 {
+			showMyTasks = true
+		}
+	}
+
 	header := RenderTaskListHeader(totalCount, filterType, filterStatus, filterTag, l)
-	kb := BuildListKeyboard(tasks, filterType, filterStatus, filterTag, page, totalPages, l)
+	kb := BuildListKeyboard(tasks, filterType, filterStatus, filterTag, page, totalPages, showMyTasks, l)
 
 	if editMsgID != 0 {
 		editMsg := &telego.EditMessageTextParams{
@@ -249,7 +259,8 @@ func (h *ViewHandler) renderMyTasks(ctx context.Context, chatID int64, editMsgID
 	offset := page * PageSize
 	tasks, totalCount, err := h.storage.ListTasks(ctx, filter, offset, PageSize)
 	if err != nil {
-		_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(chatID), fmt.Sprintf("❌ Error: %v", err)))
+		log.Printf("[ViewHandler ERROR] Failed to list my tasks: %v", err)
+		_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(chatID), "❌ Ошибка при загрузке ваших задач."))
 		return
 	}
 

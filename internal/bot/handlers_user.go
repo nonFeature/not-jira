@@ -3,6 +3,10 @@ package bot
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"time"
 
 	"not-jira/internal/config"
 	"not-jira/internal/locales"
@@ -104,4 +108,82 @@ func (h *UserHandler) HandleToggleNotify(ctx context.Context, query *telego.Call
 		ReplyMarkup: kb,
 	}
 	_, _ = EditMessageTextSafe(ctx, h.bot, editParams)
+}
+
+func (h *UserHandler) HandleBackup(ctx context.Context, msg *telego.Message) {
+	l := locales.ForUser(msg.From.LanguageCode)
+	userID := msg.From.ID
+
+	if !h.cfg.Telegram.IsAdmin(userID) {
+		reply := tu.Message(tu.ID(userID), l.Common.AdminOnly).WithParseMode(telego.ModeHTML)
+		_, _ = SendMessageSafe(ctx, h.bot, reply)
+		return
+	}
+
+	statusMsg, _ := SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Backup.Creating))
+
+	timestamp := time.Now().Format("2006-01-02_15-04-05")
+	tempFileName := fmt.Sprintf("not-jira-backup-%s.db", timestamp)
+	tempPath := filepath.Join(os.TempDir(), tempFileName)
+
+	if err := h.storage.Backup(ctx, tempPath); err != nil {
+		log.Printf("[Backup ERROR] Backup failed: %v", err)
+		if statusMsg != nil {
+			_ = h.bot.DeleteMessage(ctx, &telego.DeleteMessageParams{
+				ChatID:    tu.ID(userID),
+				MessageID: statusMsg.MessageID,
+			})
+		}
+		_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Backup.Failed))
+		return
+	}
+	defer os.Remove(tempPath)
+
+	fileInfo, err := os.Stat(tempPath)
+	if err != nil {
+		log.Printf("[Backup ERROR] Stat backup failed: %v", err)
+		_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Backup.Failed))
+		return
+	}
+
+	_, totalTasks, _ := h.storage.ListTasks(ctx, storage.TaskFilter{IncludeArchived: true}, 0, 1)
+
+	fileSizeStr := formatFileSize(fileInfo.Size())
+	caption := fmt.Sprintf(l.Backup.Caption, time.Now().Format("02.01.2006 15:04:05"), totalTasks, fileSizeStr)
+
+	f, err := os.Open(tempPath)
+	if err != nil {
+		log.Printf("[Backup ERROR] Open backup failed: %v", err)
+		_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Backup.Failed))
+		return
+	}
+	defer f.Close()
+
+	doc := tu.Document(tu.ID(userID), tu.File(f)).WithCaption(caption).WithParseMode(telego.ModeHTML)
+	_, err = h.bot.SendDocument(ctx, doc)
+
+	if statusMsg != nil {
+		_ = h.bot.DeleteMessage(ctx, &telego.DeleteMessageParams{
+			ChatID:    tu.ID(userID),
+			MessageID: statusMsg.MessageID,
+		})
+	}
+
+	if err != nil {
+		log.Printf("[Backup ERROR] SendDocument failed: %v", err)
+		_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Backup.Failed))
+	}
+}
+
+func formatFileSize(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }

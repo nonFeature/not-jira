@@ -144,7 +144,12 @@ func RenderTaskCard(task *models.Task, l *locales.Bundle) string {
 	sb.WriteString(fmt.Sprintf(l.Task.CreatedLabel, task.CreatedAt.Format("02.01.2006 15:04"), formatRelativeTime(updatedTime, l)))
 
 	// Description inside an expandable blockquote (Bot API 7.x)
-	sb.WriteString(fmt.Sprintf(l.Task.DescLabel, html.EscapeString(task.Description)))
+	desc := task.Description
+	descRunes := []rune(desc)
+	if len(descRunes) > 1500 {
+		desc = string(descRunes[:1497]) + "..."
+	}
+	sb.WriteString(fmt.Sprintf(l.Task.DescLabel, html.EscapeString(desc)))
 
 	// Subtasks (if any)
 	if len(task.Subtasks) > 0 {
@@ -179,7 +184,12 @@ func RenderTaskCard(task *models.Task, l *locales.Bundle) string {
 		}
 		commentIcon := emoji.Messages()
 		for _, c := range task.Comments[start:] {
-			sb.WriteString(fmt.Sprintf("%s <i>%s</i>: %s\n", commentIcon, html.EscapeString(c.AuthorName), html.EscapeString(c.Text)))
+			cText := c.Text
+			cRunes := []rune(cText)
+			if len(cRunes) > 120 {
+				cText = string(cRunes[:117]) + "..."
+			}
+			sb.WriteString(fmt.Sprintf("%s <i>%s</i>: %s\n", commentIcon, html.EscapeString(c.AuthorName), html.EscapeString(cText)))
 		}
 		sb.WriteString("\n")
 	}

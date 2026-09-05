@@ -27,6 +27,7 @@ type Storage interface {
 	ListTasks(ctx context.Context, filter TaskFilter, offset, limit int) ([]models.Task, int, error)
 	ArchiveInactiveClosedTasks(ctx context.Context, inactiveDuration time.Duration) (int64, error)
 	GetAllLabels(ctx context.Context) ([]string, error)
+	Backup(ctx context.Context, destPath string) error
 
 	// Subtasks
 	AddSubtask(ctx context.Context, taskID, title string) (*models.Subtask, error)

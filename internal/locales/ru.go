@@ -19,7 +19,8 @@ func GetRu() *Bundle {
 				"/view [ID] — карточка задачи (напр. /view B0)\n"+
 				"/settings — уведомления в ЛС\n\n", emoji.Wave()),
 			GreetingAdmin: fmt.Sprintf("%s <b>Админам:</b>\n"+
-				"/add — создать задачу (ответом на сообщение)\n", emoji.Star()),
+				"/add — создать задачу (ответом на сообщение)\n"+
+				"/backup — выгрузить бэкап базы данных\n", emoji.Star()),
 		},
 		Settings: Settings{
 			Title:          fmt.Sprintf("%s <b>Настройки уведомлений</b>\n\nУведомления в ЛС: <b>%%s</b>", emoji.Gear()),
@@ -164,6 +165,11 @@ func GetRu() *Bundle {
 			PromptStartDM:      fmt.Sprintf("%s %%s, начните диалог с ботом в ЛС.", emoji.Warning()),
 			TopicStatusUpdated: fmt.Sprintf("%s <b>[%%s]</b> %%s %%s\n%%s", emoji.Bell()),
 			DMStatusUpdated:    fmt.Sprintf("%s <b>[%%s]</b> %%s %%s\n%%s", emoji.Bell()),
+		},
+		Backup: Backup{
+			Creating: "📦 Создание резервной копии базы данных...",
+			Caption:  "📦 <b>Резервная копия базы данных</b>\n\n📅 Дата: <code>%s</code>\n📋 Всего задач: <b>%d</b>\n💾 Размер: <code>%s</code>",
+			Failed:   "❌ Не удалось создать резервную копию базы данных.",
 		},
 	}
 }

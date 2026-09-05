@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"log"
 	"strings"
 
 	"not-jira/internal/ai"
@@ -40,7 +41,7 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 	l := locales.ForUser(msg.From.LanguageCode)
 	senderID := msg.From.ID
 	if !h.cfg.Telegram.IsAdmin(senderID) {
-		reply := tu.Message(tu.ID(senderID), l.Common.AdminOnly)
+		reply := tu.Message(tu.ID(senderID), l.Common.AdminOnly).WithParseMode(telego.ModeHTML)
 		_, _ = SendMessageSafe(ctx, h.bot, reply)
 		return
 	}
@@ -99,7 +100,8 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 	// Calculate Next Task ID (e.g. B0, I0)
 	nextID, nextNum, err := h.storage.GetNextTaskID(ctx, taskType)
 	if err != nil {
-		reply := tu.Message(tu.ID(senderID), fmt.Sprintf("❌ ID generation error: %v", err))
+		log.Printf("[AddHandler ERROR] Failed to calculate next task ID: %v", err)
+		reply := tu.Message(tu.ID(senderID), "❌ Ошибка при генерации ID задачи.")
 		_, _ = SendMessageSafe(ctx, h.bot, reply)
 		return
 	}
@@ -142,6 +144,7 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 			draft.Title = res.Title
 			draft.Description = res.Description
 		} else {
+			log.Printf("[AI ERROR] Failed to summarize task: %v", err)
 			// Fallback if AI fails
 			lines := strings.SplitN(sourceText, "\n", 2)
 			draft.Title = strings.TrimSpace(lines[0])
@@ -156,7 +159,8 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 		}
 
 		if err := h.storage.CreateTask(ctx, draft); err != nil {
-			reply := tu.Message(tu.ID(senderID), fmt.Sprintf("❌ Database save error: %v", err))
+			log.Printf("[AddHandler ERROR] Failed to save task: %v", err)
+			reply := tu.Message(tu.ID(senderID), "❌ Ошибка при сохранении задачи в базу данных.")
 			_, _ = SendMessageSafe(ctx, h.bot, reply)
 			return
 		}

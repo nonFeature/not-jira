@@ -185,14 +185,15 @@ func TestBuildListKeyboardWithTag(t *testing.T) {
 		{ID: "B1", Title: "Task 1", Status: models.StatusNew},
 	}
 
-	kb := BuildListKeyboard(tasks, "BUG", "NEW", "frontend", 0, 1, l)
+	kb := BuildListKeyboard(tasks, "BUG", "NEW", "frontend", 0, 1, true, l)
 	if kb == nil {
 		t.Fatalf("expected non-nil keyboard")
 	}
 
-	// Bottom row should have tag filter button
+	// Bottom row should have tag filter button and my tasks button
 	bottomRow := kb.InlineKeyboard[len(kb.InlineKeyboard)-1]
 	foundTagBtn := false
+	foundMyTasks := false
 	for _, btn := range bottomRow {
 		if btn.CallbackData == "list_tags:BUG:NEW:frontend:0" {
 			foundTagBtn = true
@@ -200,9 +201,24 @@ func TestBuildListKeyboardWithTag(t *testing.T) {
 				t.Errorf("expected tag button text to contain #frontend, got %s", btn.Text)
 			}
 		}
+		if btn.CallbackData == "my:assigned:0" {
+			foundMyTasks = true
+		}
 	}
 	if !foundTagBtn {
 		t.Errorf("expected list_tags:BUG:NEW:frontend:0 button in bottom row")
+	}
+	if !foundMyTasks {
+		t.Errorf("expected my:assigned:0 button in bottom row when showMyTasks=true")
+	}
+
+	// When showMyTasks is false, my:assigned:0 button should NOT be present
+	kbWithoutMy := BuildListKeyboard(tasks, "BUG", "NEW", "frontend", 0, 1, false, l)
+	bottomRowWithoutMy := kbWithoutMy.InlineKeyboard[len(kbWithoutMy.InlineKeyboard)-1]
+	for _, btn := range bottomRowWithoutMy {
+		if btn.CallbackData == "my:assigned:0" {
+			t.Errorf("expected NO my:assigned:0 button when showMyTasks=false")
+		}
 	}
 
 	// Tag picker keyboard
@@ -546,4 +562,124 @@ func TestTaskInlineKeyboardManageSubAndComm(t *testing.T) {
 		t.Errorf("expected manage_comm:B30 button in task inline keyboard")
 	}
 }
+
+func TestBuildTransferInviteKeyboard(t *testing.T) {
+	l := locales.ForUser("ru")
+
+	// Test with targetUID
+	kbWithTarget := BuildTransferInviteKeyboard("B40", 123456789, l)
+	if kbWithTarget == nil || len(kbWithTarget.InlineKeyboard) != 1 {
+		t.Fatalf("unexpected kbWithTarget structure")
+	}
+	row := kbWithTarget.InlineKeyboard[0]
+	if len(row) != 2 {
+		t.Fatalf("expected 2 buttons in row, got %d", len(row))
+	}
+	if row[0].CallbackData != "accept_assign:B40:123456789" {
+		t.Errorf("expected accept_assign:B40:123456789, got %s", row[0].CallbackData)
+	}
+	if row[1].CallbackData != "reject_assign:B40:123456789" {
+		t.Errorf("expected reject_assign:B40:123456789, got %s", row[1].CallbackData)
+	}
+
+	// Test with targetUID == 0 (backward compatible fallback)
+	kbFallback := BuildTransferInviteKeyboard("B40", 0, l)
+	if kbFallback.InlineKeyboard[0][0].CallbackData != "accept_assign:B40" {
+		t.Errorf("expected accept_assign:B40, got %s", kbFallback.InlineKeyboard[0][0].CallbackData)
+	}
+	if kbFallback.InlineKeyboard[0][1].CallbackData != "reject_assign:B40" {
+		t.Errorf("expected reject_assign:B40, got %s", kbFallback.InlineKeyboard[0][1].CallbackData)
+	}
+}
+
+func TestRenderTaskCardTruncation(t *testing.T) {
+	l := locales.ForUser("ru")
+
+	longDesc := strings.Repeat("A", 2000)
+	longComment := strings.Repeat("C", 300)
+
+	task := &models.Task{
+		ID:          "B50",
+		Type:        models.TaskTypeBug,
+		Title:       "Test bug",
+		Description: longDesc,
+		Status:      models.StatusNew,
+		Comments: []models.Comment{
+			{ID: 1, TaskID: "B50", AuthorID: 10, AuthorName: "tester", Text: longComment},
+		},
+	}
+
+	cardHTML := RenderTaskCard(task, l)
+	// Must not contain full 2000 chars of description
+	if strings.Contains(cardHTML, longDesc) {
+		t.Errorf("expected description to be truncated in card preview")
+	}
+	// Must not contain full 300 chars of comment
+	if strings.Contains(cardHTML, longComment) {
+		t.Errorf("expected comment to be truncated in card preview")
+	}
+	// Verify overall length stays well under Telegram 4096 limit
+	if len([]rune(cardHTML)) > 3500 {
+		t.Errorf("card length exceeds safe threshold: %d runes", len([]rune(cardHTML)))
+	}
+}
+
+func TestUserRateLimiter(t *testing.T) {
+	limiter := NewUserRateLimiter(3, 100*time.Millisecond)
+
+	userID := int64(999)
+	if !limiter.Allow(userID) {
+		t.Errorf("expected action 1 to be allowed")
+	}
+	if !limiter.Allow(userID) {
+		t.Errorf("expected action 2 to be allowed")
+	}
+	if !limiter.Allow(userID) {
+		t.Errorf("expected action 3 to be allowed")
+	}
+	// 4th action in window should be blocked
+	if limiter.Allow(userID) {
+		t.Errorf("expected action 4 to be blocked by rate limit")
+	}
+
+	// Different user should still be allowed
+	if !limiter.Allow(int64(888)) {
+		t.Errorf("expected different user to be allowed")
+	}
+
+	// After window expires, original user should be allowed again
+	time.Sleep(120 * time.Millisecond)
+	if !limiter.Allow(userID) {
+		t.Errorf("expected user to be allowed after window expiration")
+	}
+}
+
+func TestFSMCleanup(t *testing.T) {
+	fsm := NewFSM()
+
+	now := time.Now().UTC()
+	fsm.Set(100, &models.UserSession{
+		State:     models.StateEditingTitle,
+		UpdatedAt: now.Add(-2 * time.Hour),
+	})
+	fsm.Set(200, &models.UserSession{
+		State:     models.StateEditingDesc,
+		UpdatedAt: now,
+	})
+
+	// Clean up sessions older than 1 hour
+	cleaned := fsm.Cleanup(1 * time.Hour)
+	if cleaned != 1 {
+		t.Errorf("expected 1 session cleaned, got %d", cleaned)
+	}
+
+	if fsm.Get(100) != nil {
+		t.Errorf("expected session 100 to be removed")
+	}
+	if fsm.Get(200) == nil {
+		t.Errorf("expected active session 200 to be preserved")
+	}
+}
+
+
 

@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 type FSMState string
 
 const (
@@ -22,4 +24,5 @@ type UserSession struct {
 	SubtaskID int64
 	CommentID int64
 	DraftTask *Task
+	UpdatedAt time.Time
 }

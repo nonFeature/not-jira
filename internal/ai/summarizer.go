@@ -26,10 +26,15 @@ type SummarizeResult struct {
 	Description string `json:"description"`
 }
 
+type responseFormat struct {
+	Type string `json:"type"`
+}
+
 type chatCompletionRequest struct {
-	Model       string                  `json:"model"`
-	Messages    []chatCompletionMessage `json:"messages"`
-	Temperature float64                 `json:"temperature"`
+	Model          string                  `json:"model"`
+	Messages       []chatCompletionMessage `json:"messages"`
+	Temperature    float64                 `json:"temperature"`
+	ResponseFormat *responseFormat         `json:"response_format,omitempty"`
 }
 
 type chatCompletionMessage struct {
@@ -96,7 +101,8 @@ func (s *Summarizer) Summarize(ctx context.Context, taskType string, text string
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: text},
 		},
-		Temperature: 0.2,
+		Temperature:    0.2,
+		ResponseFormat: &responseFormat{Type: "json_object"},
 	}
 
 	jsonData, err := json.Marshal(reqBody)

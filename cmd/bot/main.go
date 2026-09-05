@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -17,6 +18,12 @@ import (
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to YAML configuration file")
 	flag.Parse()
+
+	logFile, err := os.OpenFile("not-jira.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err == nil {
+		defer logFile.Close()
+		log.SetOutput(io.MultiWriter(os.Stdout, logFile))
+	}
 
 	log.Println("[Main] Starting not-jira...")
 

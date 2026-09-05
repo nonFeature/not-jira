@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"html"
 
 	"not-jira/internal/emoji"
 	"not-jira/internal/locales"
@@ -25,8 +26,8 @@ func PromptStartInDM(ctx context.Context, bot *telego.Bot, botUsername string, o
 		userMention = "@" + originMsg.From.Username
 	}
 
-	text := fmt.Sprintf(l.Notifications.PromptStartDM, userMention)
-	reply := tu.Message(tu.ID(originMsg.Chat.ID), text)
+	text := fmt.Sprintf(l.Notifications.PromptStartDM, html.EscapeString(userMention))
+	reply := tu.Message(tu.ID(originMsg.Chat.ID), text).WithParseMode(telego.ModeHTML)
 	reply.ReplyParameters = &telego.ReplyParameters{MessageID: originMsg.MessageID}
 	if originMsg.MessageThreadID != 0 {
 		reply.MessageThreadID = originMsg.MessageThreadID

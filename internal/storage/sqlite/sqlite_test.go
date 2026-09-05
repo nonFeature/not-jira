@@ -490,4 +490,86 @@ func TestPriorityAndLabels(t *testing.T) {
 	}
 }
 
+func TestBackup(t *testing.T) {
+	st, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	task := &models.Task{
+		ID:          "B0",
+		Num:         0,
+		Type:        models.TaskTypeBug,
+		Title:       "Backup test task",
+		Description: "Testing backup",
+		Status:      models.StatusNew,
+	}
+	if err := st.CreateTask(ctx, task); err != nil {
+		t.Fatalf("CreateTask failed: %v", err)
+	}
+
+	backupDir, err := os.MkdirTemp("", "not-jira-backup-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(backupDir)
+
+	backupPath := filepath.Join(backupDir, "backup.db")
+	if err := st.Backup(ctx, backupPath); err != nil {
+		t.Fatalf("Backup failed: %v", err)
+	}
+
+	// Verify backup file exists and can be opened
+	if info, err := os.Stat(backupPath); err != nil || info.Size() == 0 {
+		t.Fatalf("backup file does not exist or is empty: %v", err)
+	}
+
+	backupStorage, err := sqlite.New(backupPath)
+	if err != nil {
+		t.Fatalf("failed to open backup database: %v", err)
+	}
+	defer backupStorage.Close()
+
+	restoredTask, err := backupStorage.GetTask(ctx, "B0")
+	if err != nil || restoredTask == nil || restoredTask.Title != "Backup test task" {
+		t.Fatalf("failed to read task from backup database: %v", err)
+	}
+}
+
+func TestCreateTaskCollisionRetry(t *testing.T) {
+	st, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	task1 := &models.Task{
+		ID:          "B0",
+		Num:         0,
+		Type:        models.TaskTypeBug,
+		Title:       "Task 1",
+		Description: "First task",
+		Status:      models.StatusNew,
+	}
+	if err := st.CreateTask(ctx, task1); err != nil {
+		t.Fatalf("CreateTask 1 failed: %v", err)
+	}
+
+	// Deliberately create task2 with same ID "B0" to simulate a race condition collision
+	task2 := &models.Task{
+		ID:          "B0",
+		Num:         0,
+		Type:        models.TaskTypeBug,
+		Title:       "Task 2",
+		Description: "Second task with colliding ID",
+		Status:      models.StatusNew,
+	}
+	// CreateTask should auto-retry and reassign to B1
+	if err := st.CreateTask(ctx, task2); err != nil {
+		t.Fatalf("CreateTask 2 failed to retry and resolve collision: %v", err)
+	}
+
+	if task2.ID != "B1" || task2.Num != 1 {
+		t.Errorf("expected task2 to be reassigned to B1/1, got %s/%d", task2.ID, task2.Num)
+	}
+}
+
+
 

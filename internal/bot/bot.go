@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"not-jira/internal/ai"
@@ -14,6 +15,7 @@ import (
 	"not-jira/internal/storage"
 
 	"github.com/mymmrac/telego"
+	tu "github.com/mymmrac/telego/telegoutil"
 	"golang.org/x/net/proxy"
 )
 
@@ -29,6 +31,11 @@ type BotService struct {
 	editHandler *EditHandler
 	userHandler *UserHandler
 	notifier    *Notifier
+
+	sem chan struct{}
+	wg  sync.WaitGroup
+
+	limiter *UserRateLimiter
 }
 
 func New(cfg *config.Config, st storage.Storage, sm *ai.Summarizer) (*BotService, error) {
@@ -84,6 +91,8 @@ func New(cfg *config.Config, st storage.Storage, sm *ai.Summarizer) (*BotService
 		editHandler: NewEditHandler(bot, cfg, st, fsm, notifier),
 		userHandler: NewUserHandler(bot, botUser.Username, cfg, st),
 		notifier:    notifier,
+		sem:         make(chan struct{}, 30),
+		limiter:     NewUserRateLimiter(5, 1*time.Second),
 	}
 
 	return s, nil
@@ -107,13 +116,24 @@ func (s *BotService) Start(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			log.Println("[Bot] Stopping update processing...")
+			pollCancel()
+			s.wg.Wait()
 			return nil
 		case update, ok := <-updates:
 			if !ok {
+				s.wg.Wait()
 				return nil
 			}
-			// Process each update asynchronously in a separate goroutine
-			go s.dispatchUpdate(ctx, update)
+			// Limit concurrent update processing goroutines (max 30)
+			s.sem <- struct{}{}
+			s.wg.Add(1)
+			go func(up telego.Update) {
+				defer func() {
+					<-s.sem
+					s.wg.Done()
+				}()
+				s.dispatchUpdate(ctx, up)
+			}(update)
 		}
 	}
 }
@@ -139,11 +159,15 @@ func (s *BotService) runAutoArchive(ctx context.Context) {
 	count, err := s.storage.ArchiveInactiveClosedTasks(ctx, 7*24*time.Hour)
 	if err != nil {
 		log.Printf("[Archiver ERROR] Auto-archive failed: %v", err)
-		return
-	}
-	if count > 0 {
+	} else if count > 0 {
 		log.Printf("[Archiver] Auto-archived %d inactive closed task(s) (> 7 days).", count)
 	}
+
+	cleanedFSM := s.fsm.Cleanup(24 * time.Hour)
+	if cleanedFSM > 0 {
+		log.Printf("[FSM] Cleaned up %d expired session(s).", cleanedFSM)
+	}
+	s.limiter.Cleanup(10 * time.Minute)
 }
 
 func (s *BotService) dispatchUpdate(ctx context.Context, update telego.Update) {
@@ -154,12 +178,23 @@ func (s *BotService) dispatchUpdate(ctx context.Context, update telego.Update) {
 	}()
 
 	// Cache user profile for lookups and delegation
+	var userID int64
 	if update.Message != nil && update.Message.From != nil {
 		from := update.Message.From
+		userID = from.ID
 		_ = s.storage.UpsertUser(ctx, from.ID, from.Username, from.FirstName)
 	} else if update.CallbackQuery != nil {
 		from := &update.CallbackQuery.From
+		userID = from.ID
 		_ = s.storage.UpsertUser(ctx, from.ID, from.Username, from.FirstName)
+	}
+
+	// Per-user rate limiting (max 5 actions per second)
+	if userID != 0 && !s.limiter.Allow(userID) {
+		if update.CallbackQuery != nil {
+			_ = s.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(update.CallbackQuery.ID).WithText("⚠️ Слишком много запросов. Подождите секунду."))
+		}
+		return
 	}
 
 	// 1. Process Callback Queries (Buttons)
@@ -211,7 +246,8 @@ func (s *BotService) dispatchUpdate(ctx context.Context, update telego.Update) {
 			s.viewHandler.HandleMyTasks(ctx, msg)
 		case "/view":
 			s.viewHandler.HandleView(ctx, msg)
-
+		case "/backup":
+			s.userHandler.HandleBackup(ctx, msg)
 		}
 	}
 }

@@ -63,6 +63,9 @@ func SendMessageSafe(ctx context.Context, bot *telego.Bot, params *telego.SendMe
 	}
 
 	hadCustomEmoji := strings.Contains(params.Text, "<tg-emoji") || keyboardHadCustomEmoji(params.ReplyMarkup)
+	if strings.Contains(params.Text, "<tg-emoji") && params.ParseMode == "" {
+		params.ParseMode = telego.ModeHTML
+	}
 	if !emoji.IsCustomEmojiEnabled() {
 		if strings.Contains(params.Text, "<tg-emoji") {
 			params.Text = emoji.StripCustomEmojis(params.Text)
@@ -97,6 +100,9 @@ func EditMessageTextSafe(ctx context.Context, bot *telego.Bot, params *telego.Ed
 	}
 
 	hadCustomEmoji := strings.Contains(params.Text, "<tg-emoji") || keyboardHadCustomEmoji(params.ReplyMarkup)
+	if strings.Contains(params.Text, "<tg-emoji") && params.ParseMode == "" {
+		params.ParseMode = telego.ModeHTML
+	}
 	if !emoji.IsCustomEmojiEnabled() {
 		if strings.Contains(params.Text, "<tg-emoji") {
 			params.Text = emoji.StripCustomEmojis(params.Text)

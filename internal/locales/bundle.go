@@ -11,6 +11,13 @@ type Bundle struct {
 	Buttons       Buttons
 	Filters       Filters
 	Notifications Notifications
+	Backup        Backup
+}
+
+type Backup struct {
+	Creating string
+	Caption  string
+	Failed   string
 }
 
 type Common struct {

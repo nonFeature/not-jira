@@ -19,7 +19,8 @@ func GetEn() *Bundle {
 				"/view [ID] — task card (e.g. /view B0)\n"+
 				"/settings — DM notifications\n\n", emoji.Wave()),
 			GreetingAdmin: fmt.Sprintf("%s <b>Admins:</b>\n"+
-				"/add — create task (reply to message)\n", emoji.Star()),
+				"/add — create task (reply to message)\n"+
+				"/backup — download database backup\n", emoji.Star()),
 		},
 		Settings: Settings{
 			Title:          fmt.Sprintf("%s <b>Notification Settings</b>\n\nDM notifications: <b>%%s</b>", emoji.Gear()),
@@ -164,6 +165,11 @@ func GetEn() *Bundle {
 			PromptStartDM:      fmt.Sprintf("%s %%s, please message the bot in DM first.", emoji.Warning()),
 			TopicStatusUpdated: fmt.Sprintf("%s <b>[%%s]</b> %%s %%s\n%%s", emoji.Bell()),
 			DMStatusUpdated:    fmt.Sprintf("%s <b>[%%s]</b> %%s %%s\n%%s", emoji.Bell()),
+		},
+		Backup: Backup{
+			Creating: "📦 Creating database backup...",
+			Caption:  "📦 <b>Database Backup</b>\n\n📅 Date: <code>%s</code>\n📋 Total Tasks: <b>%d</b>\n💾 File Size: <code>%s</code>",
+			Failed:   "❌ Failed to create database backup.",
 		},
 	}
 }

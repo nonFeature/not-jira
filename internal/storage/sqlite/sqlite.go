@@ -19,10 +19,14 @@ type SQLiteStorage struct {
 }
 
 func New(dbPath string) (*SQLiteStorage, error) {
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)")
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite database: %w", err)
 	}
+
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(10)
+	db.SetConnMaxLifetime(time.Hour)
 
 	s := &SQLiteStorage{db: db}
 	if err := s.initSchema(); err != nil {
@@ -182,14 +186,29 @@ func (s *SQLiteStorage) CreateTask(ctx context.Context, task *models.Task) error
 		archivedInt = 1
 	}
 
-	_, err := s.db.ExecContext(ctx, query,
-		task.ID, task.Num, task.Type, task.Title, task.Description, task.Status,
-		task.ChatID, task.TopicID, task.MessageID, task.MessageLink,
-		task.AuthorID, task.AuthorUsername, task.AssigneeID, task.AssigneeUsername, archivedInt,
-		string(task.Priority), labelsStr,
-		task.CreatedAt, task.UpdatedAt,
-	)
-	return err
+	for attempt := 0; attempt < 3; attempt++ {
+		_, err := s.db.ExecContext(ctx, query,
+			task.ID, task.Num, task.Type, task.Title, task.Description, task.Status,
+			task.ChatID, task.TopicID, task.MessageID, task.MessageLink,
+			task.AuthorID, task.AuthorUsername, task.AssigneeID, task.AssigneeUsername, archivedInt,
+			string(task.Priority), labelsStr,
+			task.CreatedAt, task.UpdatedAt,
+		)
+		if err == nil {
+			return nil
+		}
+		if strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
+			// Recalculate next ID and retry
+			nextID, nextNum, idErr := s.GetNextTaskID(ctx, task.Type)
+			if idErr == nil {
+				task.ID = nextID
+				task.Num = nextNum
+				continue
+			}
+		}
+		return err
+	}
+	return fmt.Errorf("failed to create task after 3 attempts")
 }
 
 func (s *SQLiteStorage) GetTask(ctx context.Context, id string) (*models.Task, error) {
@@ -594,4 +613,15 @@ func (s *SQLiteStorage) FindUserIDByUsername(ctx context.Context, username strin
 		return 0, err
 	}
 	return uid, nil
+}
+
+func (s *SQLiteStorage) Backup(ctx context.Context, destPath string) error {
+	cleanDest := strings.ReplaceAll(destPath, "'", "''")
+	cleanDest = strings.ReplaceAll(cleanDest, "\\", "/")
+	query := fmt.Sprintf("VACUUM INTO '%s'", cleanDest)
+	_, err := s.db.ExecContext(ctx, query)
+	if err != nil {
+		return fmt.Errorf("failed to backup sqlite database: %w", err)
+	}
+	return nil
 }

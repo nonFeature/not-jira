@@ -39,3 +39,7 @@ desktop.ini
 *.test
 *.prof
 coverage.html
+
+# Log files
+*.log
+not-jira.log

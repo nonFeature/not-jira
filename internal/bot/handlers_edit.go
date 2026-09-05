@@ -198,7 +198,20 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 	}
 
 	if strings.HasPrefix(data, "accept_assign:") {
-		taskID := strings.TrimPrefix(data, "accept_assign:")
+		// accept_assign:{task_id} or accept_assign:{task_id}:{target_uid}
+		parts := strings.Split(data, ":")
+		if len(parts) < 2 {
+			return
+		}
+		taskID := parts[1]
+		if len(parts) >= 3 {
+			targetUID, err := strconv.ParseInt(parts[2], 10, 64)
+			if err == nil && targetUID != 0 && targetUID != userID {
+				h.answerAlert(ctx, query.ID, l.Common.AdminOnly, true)
+				return
+			}
+		}
+
 		task, err := h.storage.GetTask(ctx, taskID)
 		if err != nil || task == nil {
 			h.answerAlert(ctx, query.ID, fmt.Sprintf(l.View.NotFound, taskID), false)
@@ -227,7 +240,20 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 	}
 
 	if strings.HasPrefix(data, "reject_assign:") {
-		taskID := strings.TrimPrefix(data, "reject_assign:")
+		// reject_assign:{task_id} or reject_assign:{task_id}:{target_uid}
+		parts := strings.Split(data, ":")
+		if len(parts) < 2 {
+			return
+		}
+		taskID := parts[1]
+		if len(parts) >= 3 {
+			targetUID, err := strconv.ParseInt(parts[2], 10, 64)
+			if err == nil && targetUID != 0 && targetUID != userID {
+				h.answerAlert(ctx, query.ID, l.Common.AdminOnly, true)
+				return
+			}
+		}
+
 		username := query.From.Username
 		if username == "" {
 			username = query.From.FirstName
@@ -979,7 +1005,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 
 
 	if text == "" && sess.State != models.StateAssigningTask {
-		_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
+		_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithParseMode(telego.ModeHTML).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
 		return true
 	}
 
@@ -988,7 +1014,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		cleanTitle := strings.Join(strings.Fields(strings.ReplaceAll(text, "\n", " ")), " ")
 		cleanTitle = emoji.StripCustomEmojis(cleanTitle)
 		if cleanTitle == "" {
-			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithReplyMarkup(BuildCancelKeyboard("", l)))
+			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithParseMode(telego.ModeHTML).WithReplyMarkup(BuildCancelKeyboard("", l)))
 			return true
 		}
 		runes := []rune(cleanTitle)
@@ -1006,6 +1032,10 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 	case models.StateCreatingTaskDesc:
 		cleanDesc := strings.TrimSpace(emoji.StripCustomEmojis(text))
 		if cleanDesc != "-" && cleanDesc != "" {
+			runes := []rune(cleanDesc)
+			if len(runes) > 1500 {
+				cleanDesc = string(runes[:1500])
+			}
 			sess.DraftTask.Description = cleanDesc
 		}
 
@@ -1050,7 +1080,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		cleanTitle := strings.Join(strings.Fields(strings.ReplaceAll(text, "\n", " ")), " ")
 		cleanTitle = emoji.StripCustomEmojis(cleanTitle)
 		if cleanTitle == "" {
-			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
+			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithParseMode(telego.ModeHTML).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
 			return true
 		}
 		runes := []rune(cleanTitle)
@@ -1076,8 +1106,12 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 	case models.StateEditingDesc:
 		cleanDesc := strings.TrimSpace(emoji.StripCustomEmojis(text))
 		if cleanDesc == "" {
-			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
+			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithParseMode(telego.ModeHTML).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
 			return true
+		}
+		runes := []rune(cleanDesc)
+		if len(runes) > 1500 {
+			cleanDesc = string(runes[:1500])
 		}
 		task, err := h.storage.GetTask(ctx, sess.TaskID)
 		if err == nil && task != nil {
@@ -1098,7 +1132,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 	case models.StateEditingLabels:
 		cleanText := strings.TrimSpace(text)
 		if cleanText == "" {
-			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
+			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithParseMode(telego.ModeHTML).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
 			return true
 		}
 		task, err := h.storage.GetTask(ctx, sess.TaskID)
@@ -1151,7 +1185,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		cleanTitle := strings.Join(strings.Fields(cleanText), " ")
 		cleanTitle = emoji.StripCustomEmojis(cleanTitle)
 		if cleanTitle == "" {
-			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
+			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithParseMode(telego.ModeHTML).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
 			return true
 		}
 		runes := []rune(cleanTitle)
@@ -1179,7 +1213,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		cleanTitle := strings.Join(strings.Fields(cleanText), " ")
 		cleanTitle = emoji.StripCustomEmojis(cleanTitle)
 		if cleanTitle == "" {
-			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
+			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithParseMode(telego.ModeHTML).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
 			return true
 		}
 		runes := []rune(cleanTitle)
@@ -1203,7 +1237,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 	case models.StateAddingComment:
 		cleanComment := strings.TrimSpace(emoji.StripCustomEmojis(text))
 		if cleanComment == "" {
-			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
+			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithParseMode(telego.ModeHTML).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
 			return true
 		}
 		runes := []rune(cleanComment)
@@ -1231,7 +1265,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 	case models.StateEditingComment:
 		cleanComment := strings.TrimSpace(emoji.StripCustomEmojis(text))
 		if cleanComment == "" {
-			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
+			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithParseMode(telego.ModeHTML).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
 			return true
 		}
 		runes := []rune(cleanComment)
@@ -1290,7 +1324,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 
 		if targetUID == 0 {
 			if text == "" {
-				_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
+				_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithParseMode(telego.ModeHTML).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
 				return true
 			}
 			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), fmt.Sprintf(l.Edit.TransferUserNotFound, text)).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
@@ -1304,7 +1338,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 
 		// Send offer DM to target user
 		offerText := fmt.Sprintf(l.Edit.TransferOfferReceived, senderName, task.ID, html.EscapeString(task.Title), html.EscapeString(task.Description))
-		inviteKb := BuildTransferInviteKeyboard(task.ID, l)
+		inviteKb := BuildTransferInviteKeyboard(task.ID, targetUID, l)
 		_, err = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(targetUID), offerText).WithParseMode(telego.ModeHTML).WithReplyMarkup(inviteKb))
 		if err != nil {
 			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), fmt.Sprintf(l.Edit.TransferUserNotFound, targetUsername)).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
