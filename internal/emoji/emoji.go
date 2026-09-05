@@ -198,7 +198,7 @@ func FallbackForID(emojiID string) string {
 	case ID_P3:
 		return "⚪️"
 	case ID_TRASH:
-		return "🗑"
+		return "🗑️"
 	case ID_WRITE:
 		return "✍️"
 	default:

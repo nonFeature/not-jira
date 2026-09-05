@@ -11,14 +11,12 @@ func GetEn() *Bundle {
 			AdminOnly:       fmt.Sprintf("%s Admin only.", emoji.Lock()),
 			Cancelled:       "Cancelled.",
 			OnlyTextAllowed: fmt.Sprintf("%s Only text messages are supported. Please send a text message.", emoji.Cross()),
-			NoActiveAction:  "No active actions to cancel.",
 		},
 		Start: Start{
 			GreetingUser: fmt.Sprintf("%s <b>not-jira</b> — topic task tracker\n\n"+
 				"<b>Commands:</b>\n"+
 				"/list — task list\n"+
 				"/view [ID] — task card (e.g. /view B0)\n"+
-				"/cancel — cancel current input\n"+
 				"/settings — DM notifications\n\n", emoji.Wave()),
 			GreetingAdmin: fmt.Sprintf("%s <b>Admins:</b>\n"+
 				"/add — create task (reply to message)\n", emoji.Star()),
@@ -75,6 +73,7 @@ func GetEn() *Bundle {
 			LabelsClearedAlert:     "Labels cleared",
 			PriorityChangedAlert:   "Priority: %s %s",
 			TaskUnclaimedAlert:     "Task unassigned",
+			CannotEditOtherComment: "You can only edit or delete your own comments.",
 		},
 		View: View{
 			UsageHint:     fmt.Sprintf("%s Example: /view B0", emoji.Info()),
@@ -137,13 +136,17 @@ func GetEn() *Bundle {
 			OpenDM:           "Open DM",
 			EditLabelsManual: "Custom text",
 			ClearLabels:      "Clear labels",
-			Back:             "« Back",
+			Back:             "Back",
 			Unclaim:          "Unclaim",
 			TagFilter:        "Tag",
 			Cancel:           "Cancel",
 			BackToTask:       "To task [%s]",
 			ClearAll:         "Clear all",
 			Add:              "Add",
+			EditAction:       "Edit",
+			DeleteAction:     "Delete",
+			BackToSubtasks:   "To subtasks",
+			BackToComments:   "To comments",
 		},
 		Filters: Filters{
 			AllTypes:    "All",

@@ -363,6 +363,56 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 		return
 	}
 
+	if strings.HasPrefix(data, "sub_item:") {
+		// sub_item:{subtask_id}:{task_id}
+		parts := strings.Split(data, ":")
+		if len(parts) != 3 {
+			return
+		}
+		subID, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			return
+		}
+		taskID := parts[2]
+
+		task, err := h.storage.GetTask(ctx, taskID)
+		if err != nil || task == nil {
+			h.answerAlert(ctx, query.ID, fmt.Sprintf(l.View.NotFound, taskID), false)
+			return
+		}
+		if !task.CanManage(userID, isAdmin) {
+			h.answerAlert(ctx, query.ID, l.Common.AdminOnly, true)
+			return
+		}
+
+		var targetSub *models.Subtask
+		itemNum := 0
+		for i := range task.Subtasks {
+			if task.Subtasks[i].ID == subID {
+				targetSub = &task.Subtasks[i]
+				itemNum = i + 1
+				break
+			}
+		}
+		if targetSub == nil {
+			h.answerAlert(ctx, query.ID, fmt.Sprintf(l.View.NotFound, taskID), false)
+			return
+		}
+
+		cardHTML := RenderTaskCard(task, l)
+		kb := BuildSubtaskItemKeyboard(task.ID, targetSub, itemNum, l)
+		editMsg := &telego.EditMessageTextParams{
+			ChatID:      tu.ID(query.Message.GetChat().ID),
+			MessageID:   query.Message.GetMessageID(),
+			Text:        cardHTML,
+			ParseMode:   telego.ModeHTML,
+			ReplyMarkup: kb,
+		}
+		_, _ = EditMessageTextSafe(ctx, h.bot, editMsg)
+		_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID))
+		return
+	}
+
 	if strings.HasPrefix(data, "add_sub_prompt:") {
 		taskID := strings.TrimPrefix(data, "add_sub_prompt:")
 		task, err := h.storage.GetTask(ctx, taskID)
@@ -515,6 +565,58 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 
 		cardHTML := RenderTaskCard(task, l)
 		kb := BuildCommentsManageKeyboard(task, userID, isAdmin, l)
+		editMsg := &telego.EditMessageTextParams{
+			ChatID:      tu.ID(query.Message.GetChat().ID),
+			MessageID:   query.Message.GetMessageID(),
+			Text:        cardHTML,
+			ParseMode:   telego.ModeHTML,
+			ReplyMarkup: kb,
+		}
+		_, _ = EditMessageTextSafe(ctx, h.bot, editMsg)
+		_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID))
+		return
+	}
+
+	if strings.HasPrefix(data, "comm_item:") {
+		// comm_item:{comment_id}:{task_id}
+		parts := strings.Split(data, ":")
+		if len(parts) != 3 {
+			return
+		}
+		commID, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			return
+		}
+		taskID := parts[2]
+
+		task, err := h.storage.GetTask(ctx, taskID)
+		if err != nil || task == nil {
+			h.answerAlert(ctx, query.ID, fmt.Sprintf(l.View.NotFound, taskID), false)
+			return
+		}
+
+		var targetComment *models.Comment
+		itemNum := 0
+		for i := range task.Comments {
+			if task.Comments[i].ID == commID {
+				targetComment = &task.Comments[i]
+				itemNum = i + 1
+				break
+			}
+		}
+		if targetComment == nil {
+			h.answerAlert(ctx, query.ID, fmt.Sprintf(l.View.NotFound, taskID), false)
+			return
+		}
+
+		canEdit := isAdmin || (targetComment.AuthorID != 0 && targetComment.AuthorID == userID)
+		if !canEdit {
+			h.answerAlert(ctx, query.ID, l.Edit.CannotEditOtherComment, true)
+			return
+		}
+
+		cardHTML := RenderTaskCard(task, l)
+		kb := BuildCommentItemKeyboard(task.ID, targetComment, itemNum, l)
 		editMsg := &telego.EditMessageTextParams{
 			ChatID:      tu.ID(query.Message.GetChat().ID),
 			MessageID:   query.Message.GetMessageID(),
@@ -875,11 +977,6 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		text = strings.TrimSpace(msg.Caption)
 	}
 
-	lowerText := strings.ToLower(text)
-	if lowerText == "/cancel" || strings.HasPrefix(lowerText, "/cancel@") {
-		h.HandleCancel(ctx, msg)
-		return true
-	}
 
 	if text == "" && sess.State != models.StateAssigningTask {
 		_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
@@ -1228,28 +1325,6 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 	return false
 }
 
-func (h *EditHandler) HandleCancel(ctx context.Context, msg *telego.Message) {
-	userID := msg.From.ID
-	l := locales.ForUser(msg.From.LanguageCode)
-	sess := h.fsm.Get(userID)
-	if sess == nil || sess.State == models.StateNone {
-		_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.NoActiveAction))
-		return
-	}
-
-	taskID := sess.TaskID
-	h.fsm.Clear(userID)
-
-	reply := tu.Message(tu.ID(userID), l.Common.Cancelled)
-	if taskID != "" {
-		reply.WithReplyMarkup(sanitizeKeyboard(&telego.InlineKeyboardMarkup{
-			InlineKeyboard: [][]telego.InlineKeyboardButton{
-				{emoji.MakeInlineButton(fmt.Sprintf(l.Buttons.BackToTask, taskID), fmt.Sprintf("view:%s", taskID), "", emoji.ID_ARROW_L, "⬅️", "")},
-			},
-		}))
-	}
-	_, _ = SendMessageSafe(ctx, h.bot, reply)
-}
 
 func (h *EditHandler) FSM() *FSM {
 	return h.fsm

@@ -115,8 +115,8 @@ func TestBoxAndUser(t *testing.T) {
 	// Test FallbackForID with configured ID
 	ID_TRASH = "trash_123"
 	defer func() { ID_TRASH = "" }()
-	if FallbackForID("trash_123") != "🗑" {
-		t.Errorf("expected 🗑 for ID_TRASH, got %q", FallbackForID("trash_123"))
+	if FallbackForID("trash_123") != "🗑️" {
+		t.Errorf("expected 🗑️ for ID_TRASH, got %q", FallbackForID("trash_123"))
 	}
 	ID_WRITE = "write_123"
 	defer func() { ID_WRITE = "" }()
@@ -134,8 +134,8 @@ func TestBoxAndUser(t *testing.T) {
 	ID_WRITE = ""
 
 	// Test new accessors when ID is empty (fallback to unicode)
-	if Trash() != "🗑" {
-		t.Errorf("expected 🗑, got %q", Trash())
+	if Trash() != "🗑️" {
+		t.Errorf("expected 🗑️, got %q", Trash())
 	}
 	if Write() != "✍️" {
 		t.Errorf("expected ✍️, got %q", Write())

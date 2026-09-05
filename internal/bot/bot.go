@@ -211,8 +211,7 @@ func (s *BotService) dispatchUpdate(ctx context.Context, update telego.Update) {
 			s.viewHandler.HandleMyTasks(ctx, msg)
 		case "/view":
 			s.viewHandler.HandleView(ctx, msg)
-		case "/cancel":
-			s.editHandler.HandleCancel(ctx, msg)
+
 		}
 	}
 }

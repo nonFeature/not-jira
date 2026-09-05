@@ -11,14 +11,12 @@ func GetRu() *Bundle {
 			AdminOnly:       fmt.Sprintf("%s Доступно только администраторам.", emoji.Lock()),
 			Cancelled:       "Действие отменено.",
 			OnlyTextAllowed: fmt.Sprintf("%s Поддерживается только текст. Пожалуйста, отправьте текстовое сообщение.", emoji.Cross()),
-			NoActiveAction:  "Нет активных действий для отмены.",
 		},
 		Start: Start{
 			GreetingUser: fmt.Sprintf("%s <b>not-jira</b> — трекер задач в топиках\n\n"+
 				"<b>Команды:</b>\n"+
 				"/list — список задач\n"+
 				"/view [ID] — карточка задачи (напр. /view B0)\n"+
-				"/cancel — отменить текущий ввод\n"+
 				"/settings — уведомления в ЛС\n\n", emoji.Wave()),
 			GreetingAdmin: fmt.Sprintf("%s <b>Админам:</b>\n"+
 				"/add — создать задачу (ответом на сообщение)\n", emoji.Star()),
@@ -75,6 +73,7 @@ func GetRu() *Bundle {
 			LabelsClearedAlert:     "Теги очищены",
 			PriorityChangedAlert:   "Приоритет: %s %s",
 			TaskUnclaimedAlert:     "Вы отказались от задачи",
+			CannotEditOtherComment: "Вы можете редактировать или удалять только свои комментарии.",
 		},
 		View: View{
 			UsageHint:     fmt.Sprintf("%s Пример: /view B0", emoji.Info()),
@@ -137,13 +136,17 @@ func GetRu() *Bundle {
 			OpenDM:           "Открыть ЛС",
 			EditLabelsManual: "Ввести вручную",
 			ClearLabels:      "Очистить теги",
-			Back:             "« Назад",
+			Back:             "Назад",
 			Unclaim:          "Отказаться",
 			TagFilter:        "Тег",
 			Cancel:           "Отмена",
 			BackToTask:       "К задаче [%s]",
 			ClearAll:         "Очистить все",
 			Add:              "Добавить",
+			EditAction:       "Изменить",
+			DeleteAction:     "Удалить",
+			BackToSubtasks:   "К подзадачам",
+			BackToComments:   "К комментариям",
 		},
 		Filters: Filters{
 			AllTypes:    "Все",

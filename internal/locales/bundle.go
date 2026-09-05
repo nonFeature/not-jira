@@ -17,7 +17,6 @@ type Common struct {
 	AdminOnly       string
 	Cancelled       string
 	OnlyTextAllowed string
-	NoActiveAction  string
 }
 
 type Start struct {
@@ -79,6 +78,7 @@ type Edit struct {
 	LabelsClearedAlert     string
 	PriorityChangedAlert   string
 	TaskUnclaimedAlert     string
+	CannotEditOtherComment string
 }
 
 type View struct {
@@ -151,6 +151,10 @@ type Buttons struct {
 	BackToTask       string
 	ClearAll         string
 	Add              string
+	EditAction       string
+	DeleteAction     string
+	BackToSubtasks   string
+	BackToComments   string
 }
 
 type Filters struct {
