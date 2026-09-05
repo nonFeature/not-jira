@@ -47,9 +47,9 @@ func (h *ViewHandler) HandleView(ctx context.Context, msg *telego.Message) {
 	parts := strings.Fields(msg.Text)
 	if len(parts) < 2 {
 		reply := tu.Message(tu.ID(targetChatID), l.View.UsageHint).WithParseMode(telego.ModeHTML)
-		_, err := SendMessageSafe(h.bot, reply)
+		_, err := SendMessageSafe(ctx, h.bot, reply)
 		if err != nil && msg.Chat.ID != msg.From.ID {
-			PromptStartInDM(h.bot, h.botUsername, msg)
+			PromptStartInDM(ctx, h.bot, h.botUsername, msg)
 		}
 		return
 	}
@@ -63,7 +63,7 @@ func (h *ViewHandler) HandleCallback(ctx context.Context, query *telego.Callback
 	l := locales.ForUser(query.From.LanguageCode)
 
 	if data == "noop" {
-		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID))
+		_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID))
 		return
 	}
 
@@ -78,7 +78,7 @@ func (h *ViewHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			msgID := query.Message.GetMessageID()
 			h.renderList(ctx, chatID, msgID, filterType, filterStatus, page, nil, l)
 		}
-		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID))
+		_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID))
 		return
 	}
 
@@ -88,7 +88,7 @@ func (h *ViewHandler) HandleCallback(ctx context.Context, query *telego.Callback
 		chatID := query.Message.GetChat().ID
 		msgID := query.Message.GetMessageID()
 		h.renderTask(ctx, chatID, msgID, taskID, query.From.ID, nil, l)
-		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID))
+		_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID))
 		return
 	}
 }
@@ -107,7 +107,7 @@ func (h *ViewHandler) renderList(ctx context.Context, chatID int64, editMsgID in
 	offset := page * PageSize
 	tasks, totalCount, err := h.storage.ListTasks(ctx, filter, offset, PageSize)
 	if err != nil {
-		_, _ = SendMessageSafe(h.bot, tu.Message(tu.ID(chatID), fmt.Sprintf("❌ Error: %v", err)))
+		_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(chatID), fmt.Sprintf("❌ Error: %v", err)))
 		return
 	}
 
@@ -127,32 +127,33 @@ func (h *ViewHandler) renderList(ctx context.Context, chatID int64, editMsgID in
 			ParseMode:   telego.ModeHTML,
 			ReplyMarkup: kb,
 		}
-		_, err = EditMessageTextSafe(h.bot, editMsg)
+		_, err = EditMessageTextSafe(ctx, h.bot, editMsg)
 		if err == nil {
 			return
 		}
 	}
 
 	msg := tu.Message(tu.ID(chatID), header).WithParseMode(telego.ModeHTML).WithReplyMarkup(kb)
-	_, err = SendMessageSafe(h.bot, msg)
+	_, err = SendMessageSafe(ctx, h.bot, msg)
 	if err != nil && originMsg != nil && originMsg.Chat.ID != originMsg.From.ID {
-		PromptStartInDM(h.bot, h.botUsername, originMsg)
+		PromptStartInDM(ctx, h.bot, h.botUsername, originMsg)
 	}
 }
 
 func (h *ViewHandler) renderTask(ctx context.Context, chatID int64, editMsgID int, taskID string, userID int64, originMsg *telego.Message, l *locales.Bundle) {
 	task, err := h.storage.GetTask(ctx, taskID)
 	if err != nil || task == nil {
-		_, err := SendMessageSafe(h.bot, tu.Message(tu.ID(chatID), fmt.Sprintf(l.View.NotFound, taskID)).WithParseMode(telego.ModeHTML))
+		_, err := SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(chatID), fmt.Sprintf(l.View.NotFound, taskID)).WithParseMode(telego.ModeHTML))
 		if err != nil && originMsg != nil && originMsg.Chat.ID != originMsg.From.ID {
-			PromptStartInDM(h.bot, h.botUsername, originMsg)
+			PromptStartInDM(ctx, h.bot, h.botUsername, originMsg)
 		}
 		return
 	}
 
 	isAdmin := h.cfg.Telegram.IsAdmin(userID)
+	isDev := h.cfg.Telegram.IsDev(userID)
 	cardHTML := RenderTaskCard(task, l)
-	kb := BuildTaskInlineKeyboard(task, isAdmin, l)
+	kb := BuildTaskInlineKeyboard(task, userID, isAdmin, isDev, l)
 
 	if editMsgID != 0 {
 		editMsg := &telego.EditMessageTextParams{
@@ -162,15 +163,15 @@ func (h *ViewHandler) renderTask(ctx context.Context, chatID int64, editMsgID in
 			ParseMode:   telego.ModeHTML,
 			ReplyMarkup: kb,
 		}
-		_, err = EditMessageTextSafe(h.bot, editMsg)
+		_, err = EditMessageTextSafe(ctx, h.bot, editMsg)
 		if err == nil {
 			return
 		}
 	}
 
 	msg := tu.Message(tu.ID(chatID), cardHTML).WithParseMode(telego.ModeHTML).WithReplyMarkup(kb)
-	_, err = SendMessageSafe(h.bot, msg)
+	_, err = SendMessageSafe(ctx, h.bot, msg)
 	if err != nil && originMsg != nil && originMsg.Chat.ID != originMsg.From.ID {
-		PromptStartInDM(h.bot, h.botUsername, originMsg)
+		PromptStartInDM(ctx, h.bot, h.botUsername, originMsg)
 	}
 }

@@ -10,6 +10,7 @@ const (
 	StateEditingDesc       FSMState = "editing_desc"
 	StateAddingSubtask     FSMState = "adding_subtask"
 	StateAddingComment     FSMState = "adding_comment"
+	StateAssigningTask     FSMState = "assigning_task"
 )
 
 type UserSession struct {

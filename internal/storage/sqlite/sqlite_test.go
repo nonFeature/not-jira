@@ -2,9 +2,11 @@ package sqlite_test
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"not-jira/internal/models"
 	"not-jira/internal/storage"
@@ -206,3 +208,163 @@ func TestUserSettings(t *testing.T) {
 		t.Errorf("expected NotifyDM to be false")
 	}
 }
+
+func TestAutoArchiveAndUsers(t *testing.T) {
+	st, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Test Users
+	err := st.UpsertUser(ctx, 12345, "johndoe", "John")
+	if err != nil {
+		t.Fatalf("UpsertUser failed: %v", err)
+	}
+	uid, err := st.FindUserIDByUsername(ctx, "@johndoe")
+	if err != nil || uid != 12345 {
+		t.Errorf("expected user ID 12345, got %d, err: %v", uid, err)
+	}
+
+	// Test Task with Assignee
+	task := &models.Task{
+		ID:               "B0",
+		Num:              0,
+		Type:             models.TaskTypeBug,
+		Title:            "Old bug",
+		Description:      "Desc",
+		Status:           models.StatusDone,
+		AssigneeID:       12345,
+		AssigneeUsername: "johndoe",
+	}
+	if err := st.CreateTask(ctx, task); err != nil {
+		t.Fatalf("CreateTask failed: %v", err)
+	}
+
+	// Active task that is new
+	taskNew := &models.Task{
+		ID:          "B1",
+		Num:         1,
+		Type:        models.TaskTypeBug,
+		Title:       "New bug",
+		Description: "Desc",
+		Status:      models.StatusNew,
+	}
+	if err := st.CreateTask(ctx, taskNew); err != nil {
+		t.Fatalf("CreateTask failed: %v", err)
+	}
+
+	// Verify task retrieval with assignee
+	retrieved, err := st.GetTask(ctx, "B0")
+	if err != nil {
+		t.Fatalf("GetTask failed: %v", err)
+	}
+	if retrieved.AssigneeID != 12345 || retrieved.AssigneeUsername != "johndoe" {
+		t.Errorf("expected assignee 12345/johndoe, got %d/%s", retrieved.AssigneeID, retrieved.AssigneeUsername)
+	}
+
+	// Manually set updated_at of B0 to 10 days ago (more than 7 days)
+	oldTime := time.Now().UTC().Add(-10 * 24 * time.Hour)
+	if err := st.SetTaskUpdatedAt(ctx, task.ID, oldTime); err != nil {
+		t.Fatalf("SetTaskUpdatedAt failed: %v", err)
+	}
+
+	// Run auto-archive with 7 days threshold
+	archivedCount, err := st.ArchiveInactiveClosedTasks(ctx, 7*24*time.Hour)
+	if err != nil {
+		t.Fatalf("ArchiveInactiveClosedTasks failed: %v", err)
+	}
+	if archivedCount != 1 {
+		t.Errorf("expected 1 task archived, got %d", archivedCount)
+	}
+
+	// Verify B0 is archived and B1 is not
+	b0, _ := st.GetTask(ctx, "B0")
+	if !b0.IsArchived {
+		t.Errorf("expected B0 to be archived")
+	}
+	b1, _ := st.GetTask(ctx, "B1")
+	if b1.IsArchived {
+		t.Errorf("expected B1 not to be archived")
+	}
+
+	// Verify ListTasks without IncludeArchived only returns B1
+	list, total, err := st.ListTasks(ctx, storage.TaskFilter{}, 0, 10)
+	if err != nil {
+		t.Fatalf("ListTasks failed: %v", err)
+	}
+	if total != 1 || len(list) != 1 || list[0].ID != "B1" {
+		t.Errorf("expected ListTasks to only return 1 active task B1, got total %d", total)
+	}
+}
+
+func TestLegacyMigration(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "not-jira-mig-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dbPath := filepath.Join(tmpDir, "legacy.db")
+
+	// 1. Create a legacy database without is_archived and assignee columns
+	rawDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("failed to open raw sqlite: %v", err)
+	}
+	legacySchema := `
+		CREATE TABLE tasks (
+			id TEXT PRIMARY KEY,
+			num INTEGER NOT NULL,
+			type TEXT NOT NULL,
+			title TEXT NOT NULL,
+			description TEXT NOT NULL,
+			status TEXT NOT NULL,
+			chat_id INTEGER NOT NULL,
+			topic_id INTEGER NOT NULL,
+			message_id INTEGER NOT NULL,
+			message_link TEXT NOT NULL,
+			author_id INTEGER NOT NULL,
+			author_username TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		);
+	`
+	if _, err := rawDB.Exec(legacySchema); err != nil {
+		rawDB.Close()
+		t.Fatalf("failed to create legacy schema: %v", err)
+	}
+	rawDB.Close()
+
+	// 2. Open via sqlite.New(dbPath) which runs initSchema and migrations
+	st, err := sqlite.New(dbPath)
+	if err != nil {
+		t.Fatalf("sqlite.New(dbPath) failed on legacy database: %v", err)
+	}
+	defer st.Close()
+
+	// 3. Verify that new columns and tables work
+	ctx := context.Background()
+	task := &models.Task{
+		ID:               "L0",
+		Num:              0,
+		Type:             models.TaskTypeBug,
+		Title:            "Legacy task",
+		Description:      "Testing migration",
+		Status:           models.StatusNew,
+		AssigneeID:       999,
+		AssigneeUsername: "migrated_user",
+		IsArchived:       false,
+	}
+	if err := st.CreateTask(ctx, task); err != nil {
+		t.Fatalf("CreateTask failed after migration: %v", err)
+	}
+
+	got, err := st.GetTask(ctx, "L0")
+	if err != nil {
+		t.Fatalf("GetTask failed after migration: %v", err)
+	}
+	if got.AssigneeID != 999 || got.AssigneeUsername != "migrated_user" {
+		t.Errorf("expected assignee 999/migrated_user, got %d/%s", got.AssigneeID, got.AssigneeUsername)
+	}
+}
+

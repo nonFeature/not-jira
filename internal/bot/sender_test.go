@@ -1,10 +1,14 @@
 package bot
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"not-jira/internal/emoji"
+
+	"github.com/mymmrac/telego"
 )
 
 func TestStripCustomEmojis(t *testing.T) {
@@ -41,3 +45,48 @@ func TestIsCustomEmojiError(t *testing.T) {
 		t.Errorf("expected false for %v", err3)
 	}
 }
+
+func TestMakeInlineButtonAndStrip(t *testing.T) {
+	btn := emoji.MakeInlineButton("Саб-таск", "call_1", "", emoji.ID_PLUS, "➕", "primary")
+	if emoji.IsCustomEmojiEnabled() {
+		if btn.Text != "Саб-таск" {
+			t.Errorf("expected text 'Саб-таск', got %q", btn.Text)
+		}
+		if btn.IconCustomEmojiID != emoji.ID_PLUS {
+			t.Errorf("expected IconCustomEmojiID %q, got %q", emoji.ID_PLUS, btn.IconCustomEmojiID)
+		}
+		data, err := json.Marshal(btn)
+		if err != nil {
+			t.Fatalf("json marshal failed: %v", err)
+		}
+		jsonStr := string(data)
+		if !strings.Contains(jsonStr, `"icon_custom_emoji_id":"5251309384419548860"`) {
+			t.Errorf("expected json to contain icon_custom_emoji_id, got %s", jsonStr)
+		}
+		if !strings.Contains(jsonStr, `"text":"Саб-таск"`) {
+			t.Errorf("expected json to contain text 'Саб-таск', got %s", jsonStr)
+		}
+	}
+
+	ikm := &telego.InlineKeyboardMarkup{
+		InlineKeyboard: [][]telego.InlineKeyboardButton{{btn}},
+	}
+	StripKeyboardCustomEmojis(ikm)
+	strippedBtn := ikm.InlineKeyboard[0][0]
+	if strippedBtn.IconCustomEmojiID != "" {
+		t.Errorf("expected empty IconCustomEmojiID, got %q", strippedBtn.IconCustomEmojiID)
+	}
+	if strippedBtn.Text != "➕ Саб-таск" {
+		t.Errorf("expected text '➕ Саб-таск', got %q", strippedBtn.Text)
+	}
+}
+
+func TestCleanAlertText(t *testing.T) {
+	input := `<tg-emoji emoji-id="5251750898467649056">✅</tg-emoji> @alice принял задачу <b>[B0]</b>.`
+	expected := `✅ @alice принял задачу [B0].`
+	result := cleanAlertText(input)
+	if result != expected {
+		t.Errorf("expected %q, got %q", expected, result)
+	}
+}
+

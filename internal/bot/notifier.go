@@ -41,7 +41,7 @@ func (n *Notifier) NotifyStatusChange(ctx context.Context, task *models.Task) {
 		if task.TopicID != 0 {
 			msg.MessageThreadID = int(task.TopicID)
 		}
-		_, _ = SendMessageSafe(n.bot, msg)
+		_, _ = SendMessageSafe(ctx, n.bot, msg)
 	}
 
 	// 2. Notify author in private chat if enabled
@@ -56,7 +56,7 @@ func (n *Notifier) NotifyStatusChange(ctx context.Context, task *models.Task) {
 			dmMsg.ParseMode = telego.ModeHTML
 			dmMsg.ReplyMarkup = BuildSettingsKeyboard(true, lAuthor)
 
-			_, _ = SendMessageSafe(n.bot, dmMsg)
+			_, _ = SendMessageSafe(ctx, n.bot, dmMsg)
 		}
 	}
 }

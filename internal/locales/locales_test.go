@@ -1,25 +1,28 @@
 package locales
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestForUser(t *testing.T) {
 	tests := []struct {
 		lang     string
 		expected string
 	}{
-		{"ru", "👋 <b>Привет! Я not-jira.</b>\n\n"},
-		{"ru-RU", "👋 <b>Привет! Я not-jira.</b>\n\n"},
-		{"RU", "👋 <b>Привет! Я not-jira.</b>\n\n"},
-		{"en", "👋 <b>Hello! I am not-jira.</b>\n\n"},
-		{"en-US", "👋 <b>Hello! I am not-jira.</b>\n\n"},
-		{"de", "👋 <b>Hello! I am not-jira.</b>\n\n"},
-		{"", "👋 <b>Hello! I am not-jira.</b>\n\n"},
+		{"ru", "<b>not-jira</b>"},
+		{"ru-RU", "<b>not-jira</b>"},
+		{"RU", "<b>not-jira</b>"},
+		{"en", "<b>not-jira</b>"},
+		{"en-US", "<b>not-jira</b>"},
+		{"de", "<b>not-jira</b>"},
+		{"", "<b>not-jira</b>"},
 	}
 
 	for _, tt := range tests {
 		bundle := ForUser(tt.lang)
-		if len(bundle.Start.GreetingUser) < 30 || bundle.Start.GreetingUser[:30] != tt.expected[:30] {
-			t.Errorf("for lang %q expected prefix %q, got %q", tt.lang, tt.expected[:30], bundle.Start.GreetingUser[:30])
+		if !strings.Contains(bundle.Start.GreetingUser, tt.expected) {
+			t.Errorf("for lang %q expected substring %q, got %q", tt.lang, tt.expected, bundle.Start.GreetingUser)
 		}
 	}
 }

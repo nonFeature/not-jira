@@ -72,3 +72,28 @@ func TestIsCustomEmojiError(t *testing.T) {
 		t.Errorf("expected true")
 	}
 }
+
+func TestBoxAndUser(t *testing.T) {
+	SetCustomEmojiEnabled(true)
+	defer SetCustomEmojiEnabled(true)
+
+	// Since ID_BOX and ID_USER are currently empty, they should return fallback unicode emojis
+	if Box() != "📦" {
+		t.Errorf("expected 📦, got %q", Box())
+	}
+	if User() != "👤" {
+		t.Errorf("expected 👤, got %q", User())
+	}
+
+	// Test FallbackForID
+	if FallbackForID(ID_CHECK) != "✅" {
+		t.Errorf("expected ✅ for ID_CHECK, got %q", FallbackForID(ID_CHECK))
+	}
+	if FallbackForID("") != "" {
+		t.Errorf("expected empty string for empty ID, got %q", FallbackForID(""))
+	}
+	if FallbackForID("unknown_id") != "" {
+		t.Errorf("expected empty string for unknown ID, got %q", FallbackForID("unknown_id"))
+	}
+}
+

@@ -19,6 +19,7 @@ type TelegramConfig struct {
 	Token        string  `yaml:"token"`
 	ProxyURL     string  `yaml:"proxy_url"`
 	AdminIDs     []int64 `yaml:"admin_ids"`
+	DevIDs       []int64 `yaml:"dev_ids"`
 	BugsTopicID  int     `yaml:"bugs_topic_id"`
 	IdeasTopicID int     `yaml:"ideas_topic_id"`
 }
@@ -37,6 +38,18 @@ type AIConfig struct {
 
 func (c *TelegramConfig) IsAdmin(userID int64) bool {
 	for _, id := range c.AdminIDs {
+		if id == userID {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *TelegramConfig) IsDev(userID int64) bool {
+	if c.IsAdmin(userID) {
+		return true
+	}
+	for _, id := range c.DevIDs {
 		if id == userID {
 			return true
 		}

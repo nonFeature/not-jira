@@ -39,6 +39,22 @@ func TaskStatusEmoji(s models.TaskStatus) string {
 	}
 }
 
+// TaskStatusUnicode returns pure Unicode emoji for button texts (never uses <tg-emoji>).
+func TaskStatusUnicode(s models.TaskStatus) string {
+	switch s {
+	case models.StatusNew:
+		return "🆕"
+	case models.StatusInProgress:
+		return "⚙️"
+	case models.StatusDone:
+		return "✅"
+	case models.StatusRejected:
+		return "❌"
+	default:
+		return "❓"
+	}
+}
+
 func TaskStatusName(s models.TaskStatus, l *locales.Bundle) string {
 	switch s {
 	case models.StatusNew:
@@ -62,9 +78,19 @@ func RenderTaskCard(task *models.Task, l *locales.Bundle) string {
 		task.ID, TaskTypeEmoji(task.Type), TaskTypeName(task.Type, l), html.EscapeString(task.Title)))
 
 	// Status & Metadata
-	sb.WriteString(fmt.Sprintf(l.Task.StatusLabel, TaskStatusEmoji(task.Status), TaskStatusName(task.Status, l)))
+	statusText := fmt.Sprintf(l.Task.StatusLabel, TaskStatusEmoji(task.Status), TaskStatusName(task.Status, l))
+	if task.IsArchived {
+		statusText = strings.TrimRight(statusText, "\n") + l.Task.ArchivedBadge + "\n"
+	}
+	sb.WriteString(statusText)
+
 	if task.AuthorUsername != "" {
 		sb.WriteString(fmt.Sprintf(l.Task.AuthorLabel, html.EscapeString(task.AuthorUsername)))
+	}
+	if task.AssigneeUsername != "" {
+		sb.WriteString(fmt.Sprintf(l.Task.AssigneeLabel, html.EscapeString(task.AssigneeUsername)))
+	} else {
+		sb.WriteString(l.Task.UnassignedLabel)
 	}
 	sb.WriteString(fmt.Sprintf(l.Task.CreatedLabel, task.CreatedAt.Format("02.01.2006 15:04")))
 

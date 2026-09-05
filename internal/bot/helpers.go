@@ -1,8 +1,10 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 
+	"not-jira/internal/emoji"
 	"not-jira/internal/locales"
 
 	"github.com/mymmrac/telego"
@@ -11,7 +13,7 @@ import (
 
 // PromptStartInDM sends a reply in the group/topic asking the user to start the bot in private chat.
 // Automatically adapts language to user's LanguageCode (Russian or English).
-func PromptStartInDM(bot *telego.Bot, botUsername string, originMsg *telego.Message) {
+func PromptStartInDM(ctx context.Context, bot *telego.Bot, botUsername string, originMsg *telego.Message) {
 	if originMsg == nil || originMsg.Chat.ID == originMsg.From.ID {
 		return
 	}
@@ -31,15 +33,13 @@ func PromptStartInDM(bot *telego.Bot, botUsername string, originMsg *telego.Mess
 	}
 
 	if botUsername != "" {
-		btnText := l.Buttons.OpenDM
+		btn := emoji.MakeInlineButton(l.Buttons.OpenDM, "", fmt.Sprintf("https://t.me/%s", botUsername), emoji.ID_ROCKET, "🚀", "primary")
 		reply.ReplyMarkup = &telego.InlineKeyboardMarkup{
 			InlineKeyboard: [][]telego.InlineKeyboardButton{
-				{
-					{Text: btnText, URL: fmt.Sprintf("https://t.me/%s", botUsername)},
-				},
+				{btn},
 			},
 		}
 	}
 
-	_, _ = SendMessageSafe(bot, reply)
+	_, _ = SendMessageSafe(ctx, bot, reply)
 }

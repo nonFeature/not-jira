@@ -1,4 +1,4 @@
-# Скрипт сборки not-jira под обычный Linux сервер / хостинг (linux/amd64)
+﻿# Скрипт сборки not-jira под обычный Linux сервер / хостинг (linux/amd64)
 
 Write-Host "Компиляция not-jira под Linux x86_64 (linux/amd64)..." -ForegroundColor Cyan
 

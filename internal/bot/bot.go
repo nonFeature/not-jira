@@ -64,7 +64,7 @@ func New(cfg *config.Config, st storage.Storage, sm *ai.Summarizer) (*BotService
 		return nil, fmt.Errorf("failed to initialize telego bot: %w", err)
 	}
 
-	botUser, err := bot.GetMe()
+	botUser, err := bot.GetMe(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to call GetMe on telegram bot (check token / proxy): %w", err)
 	}
@@ -90,13 +90,18 @@ func New(cfg *config.Config, st storage.Storage, sm *ai.Summarizer) (*BotService
 }
 
 func (s *BotService) Start(ctx context.Context) error {
-	updates, err := s.bot.UpdatesViaLongPolling(nil)
+	pollCtx, pollCancel := context.WithCancel(ctx)
+	defer pollCancel()
+
+	updates, err := s.bot.UpdatesViaLongPolling(pollCtx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to start long polling: %w", err)
 	}
-	defer s.bot.StopLongPolling()
 
 	log.Println("[Bot] Long polling started successfully. Ready to process updates asynchronously.")
+
+	// Start auto-archiver background worker (silent, checks every hour)
+	go s.startAutoArchiver(ctx)
 
 	for {
 		select {
@@ -113,6 +118,34 @@ func (s *BotService) Start(ctx context.Context) error {
 	}
 }
 
+func (s *BotService) startAutoArchiver(ctx context.Context) {
+	// Initial check on startup
+	s.runAutoArchive(ctx)
+
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.runAutoArchive(ctx)
+		}
+	}
+}
+
+func (s *BotService) runAutoArchive(ctx context.Context) {
+	count, err := s.storage.ArchiveInactiveClosedTasks(ctx, 7*24*time.Hour)
+	if err != nil {
+		log.Printf("[Archiver ERROR] Auto-archive failed: %v", err)
+		return
+	}
+	if count > 0 {
+		log.Printf("[Archiver] Auto-archived %d inactive closed task(s) (> 7 days).", count)
+	}
+}
+
 func (s *BotService) dispatchUpdate(ctx context.Context, update telego.Update) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -120,12 +153,21 @@ func (s *BotService) dispatchUpdate(ctx context.Context, update telego.Update) {
 		}
 	}()
 
+	// Cache user profile for lookups and delegation
+	if update.Message != nil && update.Message.From != nil {
+		from := update.Message.From
+		_ = s.storage.UpsertUser(ctx, from.ID, from.Username, from.FirstName)
+	} else if update.CallbackQuery != nil {
+		from := &update.CallbackQuery.From
+		_ = s.storage.UpsertUser(ctx, from.ID, from.Username, from.FirstName)
+	}
+
 	// 1. Process Callback Queries (Buttons)
 	if update.CallbackQuery != nil {
 		query := update.CallbackQuery
 		data := query.Data
 
-		if data == "toggle_notify_dm" {
+		if strings.HasPrefix(data, "settings:") || data == "toggle_notify_dm" {
 			s.userHandler.HandleToggleNotify(ctx, query)
 			return
 		}

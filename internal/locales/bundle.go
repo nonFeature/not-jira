@@ -50,9 +50,18 @@ type Edit struct {
 	PromptAddComment   string
 	TitleUpdated       string
 	DescUpdated        string
-	SubtaskAdded       string
-	CommentAdded       string
-	StatusChangedAlert string
+	SubtaskAdded           string
+	CommentAdded           string
+	StatusChangedAlert     string
+	StatusReopenedAlert    string
+	TaskArchivedAlert      string
+	PromptTransfer         string
+	TransferUserNotFound   string
+	TransferOfferSent      string
+	TransferOfferReceived  string
+	TransferAcceptedNotify string
+	TransferRejectedNotify string
+	TaskClaimedNotify      string
 }
 
 type View struct {
@@ -63,25 +72,34 @@ type View struct {
 }
 
 type Task struct {
-	Header         string
-	StatusLabel    string
-	AuthorLabel    string
-	CreatedLabel   string
-	DescLabel      string
-	SubtasksLabel  string
-	CommentsLabel  string
-	TypeBug        string
-	TypeIdea       string
-	StatusNew      string
-	StatusProgress string
-	StatusDone     string
-	StatusRejected string
+	Header          string
+	StatusLabel     string
+	AuthorLabel     string
+	AssigneeLabel   string
+	UnassignedLabel string
+	ArchivedBadge   string
+	CreatedLabel    string
+	DescLabel       string
+	SubtasksLabel   string
+	CommentsLabel   string
+	TypeBug         string
+	TypeIdea        string
+	StatusNew       string
+	StatusProgress  string
+	StatusDone      string
+	StatusRejected  string
 }
 
 type Buttons struct {
 	InProgress   string
 	Done         string
 	Rejected     string
+	Reopen       string
+	Archive      string
+	Claim        string
+	Transfer     string
+	AcceptTask   string
+	RejectTask   string
 	EditTitle    string
 	EditDesc     string
 	AddSubtask   string

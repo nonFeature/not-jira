@@ -41,7 +41,7 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 	senderID := msg.From.ID
 	if !h.cfg.Telegram.IsAdmin(senderID) {
 		reply := tu.Message(tu.ID(senderID), l.Common.AdminOnly)
-		_, _ = SendMessageSafe(h.bot, reply)
+		_, _ = SendMessageSafe(ctx, h.bot, reply)
 		return
 	}
 
@@ -78,7 +78,7 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 
 	if sourceText == "" {
 		reply := tu.Message(tu.ID(senderID), l.Add.UsageHint).WithParseMode(telego.ModeHTML)
-		_, _ = SendMessageSafe(h.bot, reply)
+		_, _ = SendMessageSafe(ctx, h.bot, reply)
 		return
 	}
 
@@ -100,7 +100,7 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 	nextID, nextNum, err := h.storage.GetNextTaskID(ctx, taskType)
 	if err != nil {
 		reply := tu.Message(tu.ID(senderID), fmt.Sprintf("❌ ID generation error: %v", err))
-		_, _ = SendMessageSafe(h.bot, reply)
+		_, _ = SendMessageSafe(ctx, h.bot, reply)
 		return
 	}
 
@@ -134,7 +134,7 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 
 	// If AI is enabled: auto-summarize
 	if h.summarizer != nil && h.cfg.AI.Enabled {
-		statusMsg, _ := SendMessageSafe(h.bot, tu.Message(tu.ID(senderID), l.Add.ProcessingAI).WithParseMode(telego.ModeHTML))
+		statusMsg, _ := SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(senderID), l.Add.ProcessingAI).WithParseMode(telego.ModeHTML))
 
 		typeLabel := TaskTypeName(taskType, l)
 		res, err := h.summarizer.Summarize(ctx, typeLabel, sourceText)
@@ -149,7 +149,7 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 		}
 
 		if statusMsg != nil {
-			_ = h.bot.DeleteMessage(&telego.DeleteMessageParams{
+			_ = h.bot.DeleteMessage(ctx, &telego.DeleteMessageParams{
 				ChatID:    tu.ID(senderID),
 				MessageID: statusMsg.MessageID,
 			})
@@ -157,12 +157,12 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 
 		if err := h.storage.CreateTask(ctx, draft); err != nil {
 			reply := tu.Message(tu.ID(senderID), fmt.Sprintf("❌ Database save error: %v", err))
-			_, _ = SendMessageSafe(h.bot, reply)
+			_, _ = SendMessageSafe(ctx, h.bot, reply)
 			return
 		}
 
 		cardHTML := RenderTaskCard(draft, l)
-		kb := BuildTaskInlineKeyboard(draft, true, l)
+		kb := BuildTaskInlineKeyboard(draft, senderID, true, h.cfg.Telegram.IsDev(senderID), l)
 
 		// 1. In group/topic: reply briefly that the task was accepted
 		if msg.Chat.ID != senderID {
@@ -179,16 +179,16 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 			if topicID != 0 {
 				topicMsg.MessageThreadID = int(topicID)
 			}
-			_, _ = SendMessageSafe(h.bot, topicMsg)
+			_, _ = SendMessageSafe(ctx, h.bot, topicMsg)
 		}
 
 		// 2. In admin's DM: send the full management card with buttons
 		dmCardMsg := tu.Message(tu.ID(senderID), l.Add.CardHeader+cardHTML).
 			WithParseMode(telego.ModeHTML).
 			WithReplyMarkup(kb)
-		_, dmErr := SendMessageSafe(h.bot, dmCardMsg)
+		_, dmErr := SendMessageSafe(ctx, h.bot, dmCardMsg)
 		if dmErr != nil && msg.Chat.ID != senderID {
-			PromptStartInDM(h.bot, h.botUsername, msg)
+			PromptStartInDM(ctx, h.bot, h.botUsername, msg)
 		}
 		return
 	}
@@ -205,12 +205,12 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 		draft.ID, TaskTypeName(draft.Type, l), html.EscapeString(sourceText))
 
 	dmMsg := tu.Message(tu.ID(senderID), dmText).WithParseMode(telego.ModeHTML)
-	_, dmErr := SendMessageSafe(h.bot, dmMsg)
+	_, dmErr := SendMessageSafe(ctx, h.bot, dmMsg)
 
 	if dmErr != nil {
 		// Admin hasn't started bot in DM yet
 		if msg.Chat.ID != senderID {
-			PromptStartInDM(h.bot, h.botUsername, msg)
+			PromptStartInDM(ctx, h.bot, h.botUsername, msg)
 		}
 		h.fsm.Clear(senderID)
 		return

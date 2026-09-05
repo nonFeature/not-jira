@@ -37,9 +37,9 @@ func (h *UserHandler) HandleStart(ctx context.Context, msg *telego.Message) {
 		text += l.Start.GreetingAdmin
 	}
 
-	_, err := SendMessageSafe(h.bot, tu.Message(tu.ID(msg.From.ID), text).WithParseMode(telego.ModeHTML))
+	_, err := SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(msg.From.ID), text).WithParseMode(telego.ModeHTML))
 	if err != nil && msg.Chat.ID != msg.From.ID {
-		PromptStartInDM(h.bot, h.botUsername, msg)
+		PromptStartInDM(ctx, h.bot, h.botUsername, msg)
 	}
 }
 
@@ -47,7 +47,7 @@ func (h *UserHandler) HandleSettings(ctx context.Context, msg *telego.Message) {
 	l := locales.ForUser(msg.From.LanguageCode)
 	settings, err := h.storage.GetUserSettings(ctx, msg.From.ID)
 	if err != nil {
-		_, _ = SendMessageSafe(h.bot, tu.Message(tu.ID(msg.From.ID), "❌ Error loading settings."))
+		_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(msg.From.ID), "❌ Error loading settings."))
 		return
 	}
 
@@ -59,9 +59,9 @@ func (h *UserHandler) HandleSettings(ctx context.Context, msg *telego.Message) {
 	text := fmt.Sprintf(l.Settings.Title, stateDesc)
 	kb := BuildSettingsKeyboard(settings.NotifyDM, l)
 
-	_, err = SendMessageSafe(h.bot, tu.Message(tu.ID(msg.From.ID), text).WithParseMode(telego.ModeHTML).WithReplyMarkup(kb))
+	_, err = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(msg.From.ID), text).WithParseMode(telego.ModeHTML).WithReplyMarkup(kb))
 	if err != nil && msg.Chat.ID != msg.From.ID {
-		PromptStartInDM(h.bot, h.botUsername, msg)
+		PromptStartInDM(ctx, h.bot, h.botUsername, msg)
 	}
 }
 
@@ -70,13 +70,19 @@ func (h *UserHandler) HandleToggleNotify(ctx context.Context, query *telego.Call
 	userID := query.From.ID
 	settings, err := h.storage.GetUserSettings(ctx, userID)
 	if err != nil {
-		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText("❌ Error"))
+		_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID).WithText("❌ Error"))
 		return
 	}
 
 	newStatus := !settings.NotifyDM
+	if query.Data == "settings:enable" {
+		newStatus = true
+	} else if query.Data == "settings:disable" {
+		newStatus = false
+	}
+
 	if err := h.storage.SetNotifyDM(ctx, userID, newStatus); err != nil {
-		_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText("❌ Save error"))
+		_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID).WithText("❌ Save error"))
 		return
 	}
 
@@ -88,7 +94,7 @@ func (h *UserHandler) HandleToggleNotify(ctx context.Context, query *telego.Call
 	text := fmt.Sprintf(l.Settings.Title, stateDesc)
 	kb := BuildSettingsKeyboard(newStatus, l)
 
-	_ = h.bot.AnswerCallbackQuery(tu.CallbackQuery(query.ID).WithText(l.Settings.UpdatedAlert))
+	_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID).WithText(l.Settings.UpdatedAlert))
 
 	editParams := &telego.EditMessageTextParams{
 		ChatID:      tu.ID(query.Message.GetChat().ID),
@@ -97,5 +103,5 @@ func (h *UserHandler) HandleToggleNotify(ctx context.Context, query *telego.Call
 		ParseMode:   telego.ModeHTML,
 		ReplyMarkup: kb,
 	}
-	_, _ = EditMessageTextSafe(h.bot, editParams)
+	_, _ = EditMessageTextSafe(ctx, h.bot, editParams)
 }

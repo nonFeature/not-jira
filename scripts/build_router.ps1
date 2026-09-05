@@ -1,4 +1,4 @@
-# Скрипт сборки not-jira для роутера (OpenWrt / Linux aarch64)
+﻿# Скрипт сборки not-jira для роутера (OpenWrt / Linux aarch64)
 
 Write-Host "Компиляция not-jira под OpenWrt (linux/arm64)..." -ForegroundColor Cyan
 
