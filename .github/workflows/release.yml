@@ -56,6 +56,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -70,7 +72,7 @@ jobs:
           PRERELEASE: ${{ inputs.prerelease }}
         run: |
           if [ -z "$TITLE" ]; then TITLE="$TAG"; fi
-          args=(--title "$TITLE" --generate-notes --target "$GITHUB_SHA")
+          args=(--repo "$GITHUB_REPOSITORY" --title "$TITLE" --generate-notes --target "$GITHUB_SHA")
           if [ "$DRAFT" = "true" ]; then args+=(--draft); fi
           if [ "$PRERELEASE" = "true" ]; then args+=(--prerelease); fi
           gh release create "$TAG" dist/* "${args[@]}"
