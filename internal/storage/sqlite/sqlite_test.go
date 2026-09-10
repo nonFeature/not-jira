@@ -673,3 +673,92 @@ func TestConcurrentCreateTask(t *testing.T) {
 		t.Errorf("expected %d tasks in storage, got %d", workers, total)
 	}
 }
+
+func TestHistoryAndSessions(t *testing.T) {
+	st, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	task := &models.Task{
+		ID:          "B0",
+		Num:         0,
+		Type:        models.TaskTypeBug,
+		Title:       "Test task",
+		Description: "desc",
+		Status:      models.StatusNew,
+	}
+	if err := st.CreateTask(ctx, task); err != nil {
+		t.Fatalf("CreateTask failed: %v", err)
+	}
+
+	if err := st.AddHistory(ctx, &models.HistoryEntry{TaskID: "B0", AuthorID: 1, AuthorName: "admin", Action: models.HistoryActionCreated}); err != nil {
+		t.Fatalf("AddHistory created failed: %v", err)
+	}
+	if err := st.AddHistory(ctx, &models.HistoryEntry{TaskID: "B0", AuthorID: 2, AuthorName: "dev", Action: models.HistoryActionStatus, OldValue: "NEW", NewValue: "DONE"}); err != nil {
+		t.Fatalf("AddHistory status failed: %v", err)
+	}
+
+	entries, err := st.GetHistory(ctx, "B0", 10)
+	if err != nil {
+		t.Fatalf("GetHistory failed: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 history entries, got %d", len(entries))
+	}
+	if entries[0].Action != models.HistoryActionCreated || entries[1].OldValue != "NEW" || entries[1].NewValue != "DONE" {
+		t.Errorf("unexpected history order/content: %+v", entries)
+	}
+
+	limited, err := st.GetHistory(ctx, "B0", 1)
+	if err != nil {
+		t.Fatalf("GetHistory limited failed: %v", err)
+	}
+	if len(limited) != 1 || limited[0].Action != models.HistoryActionStatus {
+		t.Errorf("expected latest entry only, got %+v", limited)
+	}
+
+	session := &models.UserSession{
+		State:     models.StateCreatingTaskDesc,
+		TaskID:    "B0",
+		DraftTask: task,
+	}
+	if err := st.SaveSession(ctx, 777, session); err != nil {
+		t.Fatalf("SaveSession failed: %v", err)
+	}
+
+	loaded, err := st.GetSession(ctx, 777)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+	if loaded == nil || loaded.State != models.StateCreatingTaskDesc || loaded.DraftTask == nil || loaded.DraftTask.Title != "Test task" {
+		t.Fatalf("unexpected loaded session: %+v", loaded)
+	}
+
+	if err := st.SaveSession(ctx, 778, &models.UserSession{
+		State:     models.StateAddingComment,
+		UpdatedAt: time.Now().UTC().Add(-48 * time.Hour),
+	}); err != nil {
+		t.Fatalf("SaveSession stale failed: %v", err)
+	}
+
+	cleaned, err := st.CleanupSessions(ctx, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("CleanupSessions failed: %v", err)
+	}
+	if cleaned != 1 {
+		t.Errorf("expected 1 session cleaned, got %d", cleaned)
+	}
+	if stale, _ := st.GetSession(ctx, 778); stale != nil {
+		t.Errorf("expected stale session to be removed")
+	}
+	if fresh, _ := st.GetSession(ctx, 777); fresh == nil {
+		t.Errorf("expected active session to be preserved")
+	}
+
+	if err := st.DeleteSession(ctx, 777); err != nil {
+		t.Fatalf("DeleteSession failed: %v", err)
+	}
+	if deleted, _ := st.GetSession(ctx, 777); deleted != nil {
+		t.Errorf("expected session to be deleted")
+	}
+}

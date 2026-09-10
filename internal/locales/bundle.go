@@ -12,6 +12,26 @@ type Bundle struct {
 	Filters       Filters
 	Notifications Notifications
 	Backup        Backup
+	History       History
+}
+
+type History struct {
+	Title         string
+	Empty         string
+	Created       string
+	Archived      string
+	Reopened      string
+	FieldTitle    string
+	FieldDesc     string
+	FieldStatus   string
+	FieldPriority string
+	FieldAssignee string
+	FieldLabels   string
+	Unassigned    string
+	None          string
+	EntryLine     string
+	EventLine     string
+	MetaLine      string
 }
 
 type Backup struct {
@@ -168,6 +188,7 @@ type Buttons struct {
 	DeleteAction     string
 	BackToSubtasks   string
 	BackToComments   string
+	History string
 }
 
 type Filters struct {

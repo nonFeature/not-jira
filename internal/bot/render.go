@@ -36,7 +36,7 @@ func TaskStatusEmoji(s models.TaskStatus) string {
 	case models.StatusRejected:
 		return emoji.Cross()
 	default:
-		return "❓"
+		return emoji.Question()
 	}
 }
 
@@ -210,7 +210,7 @@ func renderProgressBar(done, total int) string {
 	return strings.Repeat("▓", filled) + strings.Repeat("░", empty)
 }
 
-func formatRelativeTime(t time.Time, l *locales.Bundle) string {
+func formatTimeAgo(t time.Time, l *locales.Bundle) string {
 	if t.IsZero() {
 		return l.Task.JustNow
 	}
@@ -223,20 +223,98 @@ func formatRelativeTime(t time.Time, l *locales.Bundle) string {
 		if mins < 1 {
 			mins = 1
 		}
-		return fmt.Sprintf(l.Task.UpdatedLabel, fmt.Sprintf(l.Task.MinutesAgo, mins))
+		return fmt.Sprintf(l.Task.MinutesAgo, mins)
 	}
 	if diff < 24*time.Hour {
 		hours := int(diff.Hours())
 		if hours < 1 {
 			hours = 1
 		}
-		return fmt.Sprintf(l.Task.UpdatedLabel, fmt.Sprintf(l.Task.HoursAgo, hours))
+		return fmt.Sprintf(l.Task.HoursAgo, hours)
 	}
 	days := int(diff.Hours() / 24)
 	if days < 1 {
 		days = 1
 	}
-	return fmt.Sprintf(l.Task.UpdatedLabel, fmt.Sprintf(l.Task.DaysAgo, days))
+	return fmt.Sprintf(l.Task.DaysAgo, days)
+}
+
+func formatRelativeTime(t time.Time, l *locales.Bundle) string {
+	return fmt.Sprintf(l.Task.UpdatedLabel, formatTimeAgo(t, l))
+}
+
+func RenderTaskHistory(taskID string, entries []models.HistoryEntry, l *locales.Bundle) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf(l.History.Title, html.EscapeString(taskID)))
+	sb.WriteString("\n\n")
+
+	if len(entries) == 0 {
+		sb.WriteString(l.History.Empty)
+		return sb.String()
+	}
+
+	for _, e := range entries {
+		sb.WriteString(renderHistoryEntry(e, l))
+		sb.WriteString("\n")
+		sb.WriteString(fmt.Sprintf(l.History.MetaLine, html.EscapeString(historyAuthor(e.AuthorName)), formatTimeAgo(e.CreatedAt, l)))
+		sb.WriteString("\n\n")
+	}
+
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+func renderHistoryEntry(e models.HistoryEntry, l *locales.Bundle) string {
+	switch e.Action {
+	case models.HistoryActionCreated:
+		return fmt.Sprintf(l.History.EventLine, l.History.Created)
+	case models.HistoryActionArchive:
+		return fmt.Sprintf(l.History.EventLine, l.History.Archived)
+	case models.HistoryActionReopen:
+		return fmt.Sprintf(l.History.EventLine, l.History.Reopened)
+	case models.HistoryActionStatus:
+		return fmt.Sprintf(l.History.EntryLine, l.History.FieldStatus,
+			TaskStatusName(models.TaskStatus(e.OldValue), l), TaskStatusName(models.TaskStatus(e.NewValue), l))
+	case models.HistoryActionPriority:
+		return fmt.Sprintf(l.History.EntryLine, l.History.FieldPriority,
+			TaskPriorityName(models.TaskPriority(e.OldValue), l), TaskPriorityName(models.TaskPriority(e.NewValue), l))
+	case models.HistoryActionAssignee:
+		return fmt.Sprintf(l.History.EntryLine, l.History.FieldAssignee,
+			historyValue(e.OldValue, l.History.Unassigned), historyValue(e.NewValue, l.History.Unassigned))
+	case models.HistoryActionTitle:
+		return fmt.Sprintf(l.History.EntryLine, l.History.FieldTitle,
+			historyValue(truncateText(e.OldValue, 80), l.History.None), historyValue(truncateText(e.NewValue, 80), l.History.None))
+	case models.HistoryActionDesc:
+		return fmt.Sprintf(l.History.EntryLine, l.History.FieldDesc,
+			historyValue(truncateText(e.OldValue, 80), l.History.None), historyValue(truncateText(e.NewValue, 80), l.History.None))
+	case models.HistoryActionLabels:
+		return fmt.Sprintf(l.History.EntryLine, l.History.FieldLabels,
+			historyValue(e.OldValue, l.History.None), historyValue(e.NewValue, l.History.None))
+	default:
+		return fmt.Sprintf(l.History.EventLine, html.EscapeString(e.Action))
+	}
+}
+
+func historyValue(raw, emptyLabel string) string {
+	if strings.TrimSpace(raw) == "" {
+		return "<i>" + html.EscapeString(emptyLabel) + "</i>"
+	}
+	return html.EscapeString(raw)
+}
+
+func historyAuthor(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "—"
+	}
+	return "@" + strings.TrimPrefix(name, "@")
+}
+
+func truncateText(s string, limit int) string {
+	runes := []rune(s)
+	if len(runes) <= limit {
+		return s
+	}
+	return string(runes[:limit]) + "..."
 }
 
 func RenderTaskListHeader(totalCount int, filterType, filterStatus, filterTag string, l *locales.Bundle) string {

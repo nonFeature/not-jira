@@ -72,6 +72,10 @@ var (
 	ID_P3 = "5251467138568333349" // ⚪️ Low / P3
 	ID_TRASH = "5253830659071322395" // 🗑️ Delete / Clear / Trash
 	ID_WRITE = "5251444916407542521" // ✍️ Created by me tab in /my
+	ID_HISTORY = "5267026791469460280" // 📜 Change history
+	ID_QUESTION = "5267515172200691869" // ❓ Unknown / fallback status
+	ID_SAVE = "5267141346837180417" // 💾 Backup file size
+	ID_CALENDAR = "5267337403504306304" // 📅 Backup date
 )
 
 // E wraps a fallback emoji into <tg-emoji emoji-id="..."> tag if custom emojis are enabled and ID is set.
@@ -120,6 +124,10 @@ func P2() string { return E(ID_P2, "🔵") }
 func P3() string { return E(ID_P3, "⚪️") }
 func Trash() string { return E(ID_TRASH, "🗑️") }
 func Write() string { return E(ID_WRITE, "✍️") }
+func History() string { return E(ID_HISTORY, "📜") }
+func Question() string { return E(ID_QUESTION, "❓") }
+func Save() string { return E(ID_SAVE, "💾") }
+func Calendar() string { return E(ID_CALENDAR, "📅") }
 
 // FallbackForID returns standard Unicode emoji for given custom emoji ID.
 func FallbackForID(emojiID string) string {
@@ -201,6 +209,14 @@ func FallbackForID(emojiID string) string {
 		return "🗑️"
 	case ID_WRITE:
 		return "✍️"
+	case ID_HISTORY:
+		return "📜"
+	case ID_QUESTION:
+		return "❓"
+	case ID_SAVE:
+		return "💾"
+	case ID_CALENDAR:
+		return "📅"
 	default:
 		return ""
 	}

@@ -138,6 +138,15 @@ func (h *ViewHandler) HandleCallback(ctx context.Context, query *telego.Callback
 		return
 	}
 
+	if strings.HasPrefix(data, "history:") {
+		taskID := strings.TrimPrefix(data, "history:")
+		chatID := query.Message.GetChat().ID
+		msgID := query.Message.GetMessageID()
+		h.renderHistory(ctx, chatID, msgID, taskID, l)
+		_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID))
+		return
+	}
+
 	if strings.HasPrefix(data, "view:") {
 		// view:{task_id}
 		taskID := strings.TrimPrefix(data, "view:")
@@ -206,6 +215,31 @@ func (h *ViewHandler) renderList(ctx context.Context, chatID int64, editMsgID in
 	if err != nil && originMsg != nil && originMsg.Chat.ID != originMsg.From.ID {
 		PromptStartInDM(ctx, h.bot, h.botUsername, originMsg)
 	}
+}
+
+func (h *ViewHandler) renderHistory(ctx context.Context, chatID int64, editMsgID int, taskID string, l *locales.Bundle) {
+	entries, err := h.storage.GetHistory(ctx, taskID, 20)
+	if err != nil {
+		log.Printf("[ViewHandler ERROR] Failed to load history for %s: %v", taskID, err)
+	}
+
+	text := RenderTaskHistory(taskID, entries, l)
+	kb := BuildHistoryKeyboard(taskID, l)
+
+	if editMsgID != 0 {
+		editMsg := &telego.EditMessageTextParams{
+			ChatID:      tu.ID(chatID),
+			MessageID:   editMsgID,
+			Text:        text,
+			ParseMode:   telego.ModeHTML,
+			ReplyMarkup: kb,
+		}
+		if _, err := EditMessageTextSafe(ctx, h.bot, editMsg); err == nil {
+			return
+		}
+	}
+
+	_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(chatID), text).WithParseMode(telego.ModeHTML).WithReplyMarkup(kb))
 }
 
 func (h *ViewHandler) renderTask(ctx context.Context, chatID int64, editMsgID int, taskID string, userID int64, originMsg *telego.Message, l *locales.Bundle) {

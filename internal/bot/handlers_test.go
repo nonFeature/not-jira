@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -655,29 +656,52 @@ func TestUserRateLimiter(t *testing.T) {
 }
 
 func TestFSMCleanup(t *testing.T) {
-	fsm := NewFSM()
+	fsm := NewFSM(nil)
+	ctx := context.Background()
 
 	now := time.Now().UTC()
-	fsm.Set(100, &models.UserSession{
+	fsm.Set(ctx, 100, &models.UserSession{
 		State:     models.StateEditingTitle,
 		UpdatedAt: now.Add(-2 * time.Hour),
 	})
-	fsm.Set(200, &models.UserSession{
+	fsm.Set(ctx, 200, &models.UserSession{
 		State:     models.StateEditingDesc,
 		UpdatedAt: now,
 	})
 
 	// Clean up sessions older than 1 hour
-	cleaned := fsm.Cleanup(1 * time.Hour)
+	cleaned := fsm.Cleanup(ctx, 1*time.Hour)
 	if cleaned != 1 {
 		t.Errorf("expected 1 session cleaned, got %d", cleaned)
 	}
 
-	if fsm.Get(100) != nil {
+	if fsm.Get(ctx, 100) != nil {
 		t.Errorf("expected session 100 to be removed")
 	}
-	if fsm.Get(200) == nil {
+	if fsm.Get(ctx, 200) == nil {
 		t.Errorf("expected active session 200 to be preserved")
+	}
+}
+
+func TestFSMSessionIsolation(t *testing.T) {
+	fsm := NewFSM(nil)
+	ctx := context.Background()
+
+	fsm.Set(ctx, 1, &models.UserSession{
+		State:     models.StateCreatingTaskTitle,
+		DraftTask: &models.Task{ID: "B0", Title: "original"},
+	})
+
+	got := fsm.Get(ctx, 1)
+	if got == nil || got.DraftTask == nil {
+		t.Fatalf("expected session with draft task")
+	}
+	got.DraftTask.Title = "mutated"
+	got.State = models.StateEditingDesc
+
+	again := fsm.Get(ctx, 1)
+	if again.DraftTask.Title != "original" || again.State != models.StateCreatingTaskTitle {
+		t.Errorf("expected stored session to be unaffected by returned copy, got %q / %s", again.DraftTask.Title, again.State)
 	}
 }
 

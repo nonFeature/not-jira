@@ -156,6 +156,7 @@ func GetEn() *Bundle {
 			DeleteAction:     "Delete",
 			BackToSubtasks:   "To subtasks",
 			BackToComments:   "To comments",
+			History:          "History",
 		},
 		Filters: Filters{
 			AllTypes:    "All",
@@ -175,9 +176,27 @@ func GetEn() *Bundle {
 			DMStatusUpdated:    fmt.Sprintf("%s <b>[%%s]</b> %%s %%s\n%%s", emoji.Bell()),
 		},
 		Backup: Backup{
-			Creating: "📦 Creating database backup...",
-			Caption:  "📦 <b>Database Backup</b>\n\n📅 Date: <code>%s</code>\n📋 Total Tasks: <b>%d</b>\n💾 File Size: <code>%s</code>",
-			Failed:   "❌ Failed to create database backup.",
+			Creating: fmt.Sprintf("%s Creating database backup...", emoji.Box()),
+			Caption:  fmt.Sprintf("%s <b>Database Backup</b>\n\n%s Date: <code>%%s</code>\n%s Total Tasks: <b>%%d</b>\n%s File Size: <code>%%s</code>", emoji.Box(), emoji.Calendar(), emoji.Clipboard(), emoji.Save()),
+			Failed:   fmt.Sprintf("%s Failed to create database backup.", emoji.Cross()),
+		},
+		History: History{
+			Title:         fmt.Sprintf("%s <b>Change history [%%s]</b>", emoji.History()),
+			Empty:         fmt.Sprintf("<i>No changes yet.</i> %s", emoji.Info()),
+			Created:       "Task created",
+			Archived:      "Moved to archive",
+			Reopened:      "Reopened",
+			FieldTitle:    "Title",
+			FieldDesc:     "Description",
+			FieldStatus:   "Status",
+			FieldPriority: "Priority",
+			FieldAssignee: "Assignee",
+			FieldLabels:   "Labels",
+			Unassigned:    "unassigned",
+			None:          "none",
+			EntryLine:     "● <b>%s:</b> %s → %s",
+			EventLine:     "● <b>%s</b>",
+			MetaLine:      "<i>%s</i> · %s",
 		},
 	}
 }

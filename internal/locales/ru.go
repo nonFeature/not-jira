@@ -156,6 +156,7 @@ func GetRu() *Bundle {
 			DeleteAction:     "Удалить",
 			BackToSubtasks:   "К подзадачам",
 			BackToComments:   "К комментариям",
+			History:          "История",
 		},
 		Filters: Filters{
 			AllTypes:    "Все",
@@ -175,9 +176,27 @@ func GetRu() *Bundle {
 			DMStatusUpdated:    fmt.Sprintf("%s <b>[%%s]</b> %%s %%s\n%%s", emoji.Bell()),
 		},
 		Backup: Backup{
-			Creating: "📦 Создание резервной копии базы данных...",
-			Caption:  "📦 <b>Резервная копия базы данных</b>\n\n📅 Дата: <code>%s</code>\n📋 Всего задач: <b>%d</b>\n💾 Размер: <code>%s</code>",
-			Failed:   "❌ Не удалось создать резервную копию базы данных.",
+			Creating: fmt.Sprintf("%s Создание резервной копии базы данных...", emoji.Box()),
+			Caption:  fmt.Sprintf("%s <b>Резервная копия базы данных</b>\n\n%s Дата: <code>%%s</code>\n%s Всего задач: <b>%%d</b>\n%s Размер: <code>%%s</code>", emoji.Box(), emoji.Calendar(), emoji.Clipboard(), emoji.Save()),
+			Failed:   fmt.Sprintf("%s Не удалось создать резервную копию базы данных.", emoji.Cross()),
+		},
+		History: History{
+			Title:         fmt.Sprintf("%s <b>История изменений [%%s]</b>", emoji.History()),
+			Empty:         fmt.Sprintf("<i>Изменений пока нет.</i> %s", emoji.Info()),
+			Created:       "Задача создана",
+			Archived:      "Перемещена в архив",
+			Reopened:      "Открыта заново",
+			FieldTitle:    "Заголовок",
+			FieldDesc:     "Описание",
+			FieldStatus:   "Статус",
+			FieldPriority: "Приоритет",
+			FieldAssignee: "Исполнитель",
+			FieldLabels:   "Теги",
+			Unassigned:    "не назначен",
+			None:          "нет",
+			EntryLine:     "● <b>%s:</b> %s → %s",
+			EventLine:     "● <b>%s</b>",
+			MetaLine:      "<i>%s</i> · %s",
 		},
 	}
 }

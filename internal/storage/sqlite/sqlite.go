@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -91,6 +92,25 @@ func (s *SQLiteStorage) initSchema() error {
 			type TEXT PRIMARY KEY,
 			last_num INTEGER NOT NULL DEFAULT -1
 		);`,
+		`CREATE TABLE IF NOT EXISTS task_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			author_id INTEGER NOT NULL DEFAULT 0,
+			author_name TEXT NOT NULL DEFAULT '',
+			action TEXT NOT NULL,
+			old_value TEXT NOT NULL DEFAULT '',
+			new_value TEXT NOT NULL DEFAULT '',
+			created_at DATETIME NOT NULL
+		);`,
+		`CREATE TABLE IF NOT EXISTS fsm_sessions (
+			user_id INTEGER PRIMARY KEY,
+			state TEXT NOT NULL,
+			task_id TEXT NOT NULL DEFAULT '',
+			subtask_id INTEGER NOT NULL DEFAULT 0,
+			comment_id INTEGER NOT NULL DEFAULT 0,
+			draft_task TEXT NOT NULL DEFAULT '',
+			updated_at DATETIME NOT NULL
+		);`,
 	}
 
 	for _, q := range createTables {
@@ -119,6 +139,7 @@ func (s *SQLiteStorage) initSchema() error {
 		`CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);`,
 		`CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(is_archived, status, updated_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username COLLATE NOCASE);`,
+		`CREATE INDEX IF NOT EXISTS idx_history_task ON task_history(task_id, created_at);`,
 	}
 
 	for _, q := range createIndexes {
@@ -675,6 +696,133 @@ func (s *SQLiteStorage) FindUserIDByUsername(ctx context.Context, username strin
 		return 0, err
 	}
 	return uid, nil
+}
+
+func (s *SQLiteStorage) AddHistory(ctx context.Context, entry *models.HistoryEntry) error {
+	now := time.Now().UTC()
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = now
+	}
+	res, err := s.db.ExecContext(ctx,
+		`INSERT INTO task_history (task_id, author_id, author_name, action, old_value, new_value, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		entry.TaskID, entry.AuthorID, entry.AuthorName, entry.Action, entry.OldValue, entry.NewValue, entry.CreatedAt,
+	)
+	if err != nil {
+		return err
+	}
+	if id, err := res.LastInsertId(); err == nil {
+		entry.ID = id
+	}
+	return nil
+}
+
+func (s *SQLiteStorage) GetHistory(ctx context.Context, taskID string, limit int) ([]models.HistoryEntry, error) {
+	query := `SELECT id, task_id, author_id, author_name, action, old_value, new_value, created_at
+		FROM task_history WHERE task_id = ? ORDER BY id DESC`
+	args := []interface{}{taskID}
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []models.HistoryEntry
+	for rows.Next() {
+		var e models.HistoryEntry
+		if err := rows.Scan(&e.ID, &e.TaskID, &e.AuthorID, &e.AuthorName, &e.Action, &e.OldValue, &e.NewValue, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+		entries[i], entries[j] = entries[j], entries[i]
+	}
+	return entries, nil
+}
+
+func (s *SQLiteStorage) SaveSession(ctx context.Context, userID int64, session *models.UserSession) error {
+	if session == nil {
+		return s.DeleteSession(ctx, userID)
+	}
+
+	draftJSON := ""
+	if session.DraftTask != nil {
+		data, err := json.Marshal(session.DraftTask)
+		if err != nil {
+			return fmt.Errorf("failed to marshal draft task: %w", err)
+		}
+		draftJSON = string(data)
+	}
+
+	updatedAt := session.UpdatedAt
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	}
+
+	query := `INSERT INTO fsm_sessions (user_id, state, task_id, subtask_id, comment_id, draft_task, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(user_id) DO UPDATE SET
+			state = excluded.state,
+			task_id = excluded.task_id,
+			subtask_id = excluded.subtask_id,
+			comment_id = excluded.comment_id,
+			draft_task = excluded.draft_task,
+			updated_at = excluded.updated_at`
+
+	_, err := s.db.ExecContext(ctx, query,
+		userID, string(session.State), session.TaskID, session.SubtaskID, session.CommentID, draftJSON, updatedAt,
+	)
+	return err
+}
+
+func (s *SQLiteStorage) GetSession(ctx context.Context, userID int64) (*models.UserSession, error) {
+	query := `SELECT state, task_id, subtask_id, comment_id, draft_task, updated_at
+		FROM fsm_sessions WHERE user_id = ?`
+
+	var session models.UserSession
+	var state, draftJSON string
+	err := s.db.QueryRowContext(ctx, query, userID).
+		Scan(&state, &session.TaskID, &session.SubtaskID, &session.CommentID, &draftJSON, &session.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	session.State = models.FSMState(state)
+	if draftJSON != "" {
+		var draft models.Task
+		if err := json.Unmarshal([]byte(draftJSON), &draft); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal draft task: %w", err)
+		}
+		session.DraftTask = &draft
+	}
+	return &session, nil
+}
+
+func (s *SQLiteStorage) DeleteSession(ctx context.Context, userID int64) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM fsm_sessions WHERE user_id = ?", userID)
+	return err
+}
+
+func (s *SQLiteStorage) CleanupSessions(ctx context.Context, maxAge time.Duration) (int64, error) {
+	threshold := time.Now().UTC().Add(-maxAge)
+	res, err := s.db.ExecContext(ctx, "DELETE FROM fsm_sessions WHERE updated_at <= ?", threshold)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func (s *SQLiteStorage) Backup(ctx context.Context, destPath string) error {

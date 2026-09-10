@@ -78,7 +78,7 @@ func New(cfg *config.Config, st storage.Storage, sm *ai.Summarizer) (*BotService
 	}
 	log.Printf("[Bot] Authenticated as @%s (ID: %d)", botUser.Username, botUser.ID)
 
-	fsm := NewFSM()
+	fsm := NewFSM(st)
 	notifier := NewNotifier(bot, st)
 
 	s := &BotService{
@@ -165,7 +165,7 @@ func (s *BotService) runAutoArchive(ctx context.Context) {
 		log.Printf("[Archiver] Auto-archived %d inactive closed task(s) (> 7 days).", count)
 	}
 
-	cleanedFSM := s.fsm.Cleanup(24 * time.Hour)
+	cleanedFSM := s.fsm.Cleanup(ctx, 24*time.Hour)
 	if cleanedFSM > 0 {
 		log.Printf("[FSM] Cleaned up %d expired session(s).", cleanedFSM)
 	}
@@ -215,7 +215,7 @@ func (s *BotService) dispatchUpdate(ctx context.Context, update telego.Update) {
 			return
 		}
 
-		if strings.HasPrefix(data, "list:") || strings.HasPrefix(data, "list_tags:") || strings.HasPrefix(data, "view:") || strings.HasPrefix(data, "my:") || data == "noop" {
+		if strings.HasPrefix(data, "list:") || strings.HasPrefix(data, "list_tags:") || strings.HasPrefix(data, "view:") || strings.HasPrefix(data, "history:") || strings.HasPrefix(data, "my:") || data == "noop" {
 			s.viewHandler.HandleCallback(ctx, query)
 			return
 		}

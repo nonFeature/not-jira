@@ -53,5 +53,15 @@ type Storage interface {
 	UpsertUser(ctx context.Context, userID int64, username, firstName string) error
 	FindUserIDByUsername(ctx context.Context, username string) (int64, error)
 
+	// History
+	AddHistory(ctx context.Context, entry *models.HistoryEntry) error
+	GetHistory(ctx context.Context, taskID string, limit int) ([]models.HistoryEntry, error)
+
+	// FSM Sessions
+	SaveSession(ctx context.Context, userID int64, session *models.UserSession) error
+	GetSession(ctx context.Context, userID int64) (*models.UserSession, error)
+	DeleteSession(ctx context.Context, userID int64) error
+	CleanupSessions(ctx context.Context, maxAge time.Duration) (int64, error)
+
 	Close() error
 }

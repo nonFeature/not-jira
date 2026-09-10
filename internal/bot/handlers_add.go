@@ -164,6 +164,7 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 			_, _ = SendMessageSafe(ctx, h.bot, reply)
 			return
 		}
+		recordHistory(ctx, h.storage, draft.ID, msg.From, models.HistoryActionCreated, "", "")
 
 		cardHTML := RenderTaskCard(draft, l)
 		kb := BuildTaskInlineKeyboard(draft, senderID, true, h.cfg.Telegram.IsDev(senderID), l)
@@ -199,7 +200,7 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 
 	// If AI is disabled: Launch interactive form in DM with admin
 	draft.Description = sourceText // save original text as default description
-	h.fsm.Set(senderID, &models.UserSession{
+	h.fsm.Set(ctx, senderID, &models.UserSession{
 		State:     models.StateCreatingTaskTitle,
 		TaskID:    draft.ID,
 		DraftTask: draft,
@@ -216,7 +217,7 @@ func (h *AddHandler) Handle(ctx context.Context, msg *telego.Message) {
 		if msg.Chat.ID != senderID {
 			PromptStartInDM(ctx, h.bot, h.botUsername, msg)
 		}
-		h.fsm.Clear(senderID)
+		h.fsm.Clear(ctx, senderID)
 		return
 	}
 }

@@ -73,6 +73,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 
 		// Notify topic & author if status changed
 		if oldStatus != newStatus {
+			recordHistory(ctx, h.storage, task.ID, &query.From, models.HistoryActionStatus, string(oldStatus), string(newStatus))
 			h.notifier.NotifyStatusChange(ctx, task)
 		}
 
@@ -96,6 +97,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 		task.IsArchived = false
 		task.Status = models.StatusInProgress
 		_ = h.storage.UpdateTask(ctx, task)
+		recordHistory(ctx, h.storage, task.ID, &query.From, models.HistoryActionReopen, "", "")
 
 		h.answerAlert(ctx, query.ID, l.Edit.StatusReopenedAlert, false)
 		h.notifier.NotifyStatusChange(ctx, task)
@@ -117,6 +119,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 
 		task.IsArchived = true
 		_ = h.storage.UpdateTask(ctx, task)
+		recordHistory(ctx, h.storage, task.ID, &query.From, models.HistoryActionArchive, "", "")
 
 		h.answerAlert(ctx, query.ID, l.Edit.TaskArchivedAlert, false)
 		h.updateMessageCard(ctx, query.Message.GetChat().ID, query.Message.GetMessageID(), task, userID, l)
@@ -135,19 +138,24 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 
+		oldAssigneeName := task.AssigneeUsername
+		oldStatus := task.Status
 		task.AssigneeID = userID
 		task.AssigneeUsername = query.From.Username
 		if task.AssigneeUsername == "" {
 			task.AssigneeUsername = query.From.FirstName
 		}
-		oldStatus := task.Status
 		if task.Status == models.StatusNew {
 			task.Status = models.StatusInProgress
 		}
 		_ = h.storage.UpdateTask(ctx, task)
 
+		if oldAssigneeName != task.AssigneeUsername {
+			recordHistory(ctx, h.storage, task.ID, &query.From, models.HistoryActionAssignee, oldAssigneeName, task.AssigneeUsername)
+		}
 		h.answerAlert(ctx, query.ID, fmt.Sprintf(l.Edit.TaskClaimedNotify, task.AssigneeUsername, task.ID), false)
 		if oldStatus != task.Status {
+			recordHistory(ctx, h.storage, task.ID, &query.From, models.HistoryActionStatus, string(oldStatus), string(task.Status))
 			h.notifier.NotifyStatusChange(ctx, task)
 		}
 		h.updateMessageCard(ctx, query.Message.GetChat().ID, query.Message.GetMessageID(), task, userID, l)
@@ -166,12 +174,19 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 
+		oldAssigneeName := task.AssigneeUsername
+		oldStatus := task.Status
 		task.AssigneeID = 0
 		task.AssigneeUsername = ""
 		if task.Status == models.StatusInProgress {
 			task.Status = models.StatusNew
 		}
 		_ = h.storage.UpdateTask(ctx, task)
+
+		recordHistory(ctx, h.storage, task.ID, &query.From, models.HistoryActionAssignee, oldAssigneeName, "")
+		if oldStatus != task.Status {
+			recordHistory(ctx, h.storage, task.ID, &query.From, models.HistoryActionStatus, string(oldStatus), string(task.Status))
+		}
 
 		h.answerAlert(ctx, query.ID, l.Edit.TaskUnclaimedAlert, false)
 		h.updateMessageCard(ctx, query.Message.GetChat().ID, query.Message.GetMessageID(), task, userID, l)
@@ -190,7 +205,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 
-		h.fsm.Set(userID, &models.UserSession{
+		h.fsm.Set(ctx, userID, &models.UserSession{
 			State:  models.StateAssigningTask,
 			TaskID: taskID,
 		})
@@ -220,17 +235,21 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 
+		oldAssigneeName := task.AssigneeUsername
+		oldStatus := task.Status
 		task.AssigneeID = userID
 		task.AssigneeUsername = query.From.Username
 		if task.AssigneeUsername == "" {
 			task.AssigneeUsername = query.From.FirstName
 		}
-		oldStatus := task.Status
 		if task.Status == models.StatusNew {
 			task.Status = models.StatusInProgress
 		}
 		_ = h.storage.UpdateTask(ctx, task)
 
+		if oldAssigneeName != task.AssigneeUsername {
+			recordHistory(ctx, h.storage, task.ID, &query.From, models.HistoryActionAssignee, oldAssigneeName, task.AssigneeUsername)
+		}
 		h.answerAlert(ctx, query.ID, fmt.Sprintf(l.Edit.TransferAcceptedNotify, task.AssigneeUsername, task.ID), false)
 		_, _ = EditMessageTextSafe(ctx, h.bot, &telego.EditMessageTextParams{
 			ChatID:    tu.ID(userID),
@@ -239,6 +258,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			ParseMode: telego.ModeHTML,
 		})
 		if oldStatus != task.Status {
+			recordHistory(ctx, h.storage, task.ID, &query.From, models.HistoryActionStatus, string(oldStatus), string(task.Status))
 			h.notifier.NotifyStatusChange(ctx, task)
 		}
 		return
@@ -309,7 +329,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 		if taskID == "cancel_fsm" {
 			taskID = ""
 		}
-		h.fsm.Clear(userID)
+		h.fsm.Clear(ctx, userID)
 		h.answerAlert(ctx, query.ID, l.Common.Cancelled, false)
 		if taskID != "" {
 			task, err := h.storage.GetTask(ctx, taskID)
@@ -334,7 +354,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			h.answerAlert(ctx, query.ID, l.Common.AdminOnly, true)
 			return
 		}
-		h.fsm.Set(userID, &models.UserSession{
+		h.fsm.Set(ctx, userID, &models.UserSession{
 			State:  models.StateEditingTitle,
 			TaskID: taskID,
 		})
@@ -349,7 +369,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			h.answerAlert(ctx, query.ID, l.Common.AdminOnly, true)
 			return
 		}
-		h.fsm.Set(userID, &models.UserSession{
+		h.fsm.Set(ctx, userID, &models.UserSession{
 			State:  models.StateEditingDesc,
 			TaskID: taskID,
 		})
@@ -371,7 +391,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 		if len(task.Subtasks) == 0 {
-			h.fsm.Set(userID, &models.UserSession{
+			h.fsm.Set(ctx, userID, &models.UserSession{
 				State:  models.StateAddingSubtask,
 				TaskID: taskID,
 			})
@@ -455,7 +475,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			h.answerAlert(ctx, query.ID, l.Common.AdminOnly, true)
 			return
 		}
-		h.fsm.Set(userID, &models.UserSession{
+		h.fsm.Set(ctx, userID, &models.UserSession{
 			State:  models.StateAddingSubtask,
 			TaskID: taskID,
 		})
@@ -486,7 +506,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 
-		h.fsm.Set(userID, &models.UserSession{
+		h.fsm.Set(ctx, userID, &models.UserSession{
 			State:     models.StateEditingSubtask,
 			TaskID:    taskID,
 			SubtaskID: subID,
@@ -585,7 +605,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 		if len(task.Comments) == 0 {
-			h.fsm.Set(userID, &models.UserSession{
+			h.fsm.Set(ctx, userID, &models.UserSession{
 				State:  models.StateAddingComment,
 				TaskID: taskID,
 			})
@@ -671,7 +691,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			h.answerAlert(ctx, query.ID, l.Common.AdminOnly, true)
 			return
 		}
-		h.fsm.Set(userID, &models.UserSession{
+		h.fsm.Set(ctx, userID, &models.UserSession{
 			State:  models.StateAddingComment,
 			TaskID: taskID,
 		})
@@ -715,7 +735,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 
-		h.fsm.Set(userID, &models.UserSession{
+		h.fsm.Set(ctx, userID, &models.UserSession{
 			State:     models.StateEditingComment,
 			TaskID:    taskID,
 			CommentID: commID,
@@ -858,8 +878,12 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 
+		oldPriority := task.Priority
 		task.Priority = p
 		_ = h.storage.UpdateTask(ctx, task)
+		if oldPriority != task.Priority {
+			recordHistory(ctx, h.storage, task.ID, &query.From, models.HistoryActionPriority, string(oldPriority), string(task.Priority))
+		}
 
 		h.answerAlert(ctx, query.ID, fmt.Sprintf(l.Edit.PriorityChangedAlert, task.Priority.Emoji(), TaskPriorityName(task.Priority, l)), false)
 		h.updateMessageCard(ctx, query.Message.GetChat().ID, query.Message.GetMessageID(), task, userID, l)
@@ -911,8 +935,13 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 
+		oldLabels := task.FormattedLabels()
 		added := task.ToggleLabel(tag)
 		_ = h.storage.UpdateTask(ctx, task)
+
+		if oldLabels != task.FormattedLabels() {
+			recordHistory(ctx, h.storage, task.ID, &query.From, models.HistoryActionLabels, oldLabels, task.FormattedLabels())
+		}
 
 		alertMsg := fmt.Sprintf(l.Edit.LabelToggledOnAlert, tag)
 		if !added {
@@ -946,8 +975,12 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 
+		oldLabels := task.FormattedLabels()
 		task.Labels = nil
 		_ = h.storage.UpdateTask(ctx, task)
+		if oldLabels != "" {
+			recordHistory(ctx, h.storage, task.ID, &query.From, models.HistoryActionLabels, oldLabels, "")
+		}
 
 		h.answerAlert(ctx, query.ID, l.Edit.LabelsClearedAlert, false)
 
@@ -977,7 +1010,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 
-		h.fsm.Set(userID, &models.UserSession{
+		h.fsm.Set(ctx, userID, &models.UserSession{
 			State:  models.StateEditingLabels,
 			TaskID: taskID,
 		})
@@ -996,8 +1029,13 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message) bool {
 	userID := msg.From.ID
 	l := locales.ForUser(msg.From.LanguageCode)
-	sess := h.fsm.Get(userID)
+	sess := h.fsm.Get(ctx, userID)
 	if sess == nil || sess.State == models.StateNone {
+		return false
+	}
+
+	if sess.DraftTask == nil && (sess.State == models.StateCreatingTaskTitle || sess.State == models.StateCreatingTaskDesc) {
+		h.fsm.Clear(ctx, userID)
 		return false
 	}
 
@@ -1005,7 +1043,6 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 	if text == "" && msg.Caption != "" {
 		text = strings.TrimSpace(msg.Caption)
 	}
-
 
 	if text == "" && sess.State != models.StateAssigningTask {
 		_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), l.Common.OnlyTextAllowed).WithParseMode(telego.ModeHTML).WithReplyMarkup(BuildCancelKeyboard(sess.TaskID, l)))
@@ -1026,7 +1063,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		}
 		sess.DraftTask.Title = cleanTitle
 		sess.State = models.StateCreatingTaskDesc
-		h.fsm.Set(userID, sess)
+		h.fsm.Set(ctx, userID, sess)
 
 		prompt := l.Add.FormDescPrompt
 		_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), prompt).WithParseMode(telego.ModeHTML).WithReplyMarkup(BuildCancelKeyboard("", l)))
@@ -1044,12 +1081,13 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 
 		if err := h.storage.CreateTask(ctx, sess.DraftTask); err != nil {
 			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), fmt.Sprintf("❌ Error: %v", err)))
-			h.fsm.Clear(userID)
+			h.fsm.Clear(ctx, userID)
 			return true
 		}
 
 		task := sess.DraftTask
-		h.fsm.Clear(userID)
+		recordHistory(ctx, h.storage, task.ID, msg.From, models.HistoryActionCreated, "", "")
+		h.fsm.Clear(ctx, userID)
 
 		cardHTML := RenderTaskCard(task, l)
 		kb := BuildTaskInlineKeyboard(task, userID, true, h.cfg.Telegram.IsDev(userID), l)
@@ -1092,8 +1130,10 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		}
 		task, err := h.storage.GetTask(ctx, sess.TaskID)
 		if err == nil && task != nil {
+			oldTitle := task.Title
 			task.Title = cleanTitle
 			_ = h.storage.UpdateTask(ctx, task)
+			recordHistory(ctx, h.storage, task.ID, msg.From, models.HistoryActionTitle, oldTitle, cleanTitle)
 			msgReply := tu.Message(tu.ID(userID), fmt.Sprintf(l.Edit.TitleUpdated, task.ID, html.EscapeString(cleanTitle))).
 				WithParseMode(telego.ModeHTML).
 				WithReplyMarkup(sanitizeKeyboard(&telego.InlineKeyboardMarkup{
@@ -1103,7 +1143,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 				}))
 			_, _ = SendMessageSafe(ctx, h.bot, msgReply)
 		}
-		h.fsm.Clear(userID)
+		h.fsm.Clear(ctx, userID)
 		return true
 
 	case models.StateEditingDesc:
@@ -1118,8 +1158,10 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		}
 		task, err := h.storage.GetTask(ctx, sess.TaskID)
 		if err == nil && task != nil {
+			oldDesc := task.Description
 			task.Description = cleanDesc
 			_ = h.storage.UpdateTask(ctx, task)
+			recordHistory(ctx, h.storage, task.ID, msg.From, models.HistoryActionDesc, oldDesc, cleanDesc)
 			msgReply := tu.Message(tu.ID(userID), fmt.Sprintf(l.Edit.DescUpdated, task.ID)).
 				WithParseMode(telego.ModeHTML).
 				WithReplyMarkup(sanitizeKeyboard(&telego.InlineKeyboardMarkup{
@@ -1129,7 +1171,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 				}))
 			_, _ = SendMessageSafe(ctx, h.bot, msgReply)
 		}
-		h.fsm.Clear(userID)
+		h.fsm.Clear(ctx, userID)
 		return true
 
 	case models.StateEditingLabels:
@@ -1140,6 +1182,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		}
 		task, err := h.storage.GetTask(ctx, sess.TaskID)
 		if err == nil && task != nil {
+			oldLabels := task.FormattedLabels()
 			if cleanText == "-" {
 				task.Labels = nil
 			} else {
@@ -1165,6 +1208,10 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 			}
 			_ = h.storage.UpdateTask(ctx, task)
 
+			if oldLabels != task.FormattedLabels() {
+				recordHistory(ctx, h.storage, task.ID, msg.From, models.HistoryActionLabels, oldLabels, task.FormattedLabels())
+			}
+
 			formatted := task.FormattedLabels()
 			if formatted == "" {
 				formatted = "<i>(нет)</i>"
@@ -1178,7 +1225,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 				}))
 			_, _ = SendMessageSafe(ctx, h.bot, msgReply)
 		}
-		h.fsm.Clear(userID)
+		h.fsm.Clear(ctx, userID)
 		return true
 
 	case models.StateAddingSubtask:
@@ -1206,7 +1253,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 				}))
 			_, _ = SendMessageSafe(ctx, h.bot, msgReply)
 		}
-		h.fsm.Clear(userID)
+		h.fsm.Clear(ctx, userID)
 		return true
 
 	case models.StateEditingSubtask:
@@ -1234,7 +1281,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 				}))
 			_, _ = SendMessageSafe(ctx, h.bot, msgReply)
 		}
-		h.fsm.Clear(userID)
+		h.fsm.Clear(ctx, userID)
 		return true
 
 	case models.StateAddingComment:
@@ -1262,7 +1309,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 				}))
 			_, _ = SendMessageSafe(ctx, h.bot, msgReply)
 		}
-		h.fsm.Clear(userID)
+		h.fsm.Clear(ctx, userID)
 		return true
 
 	case models.StateEditingComment:
@@ -1286,14 +1333,14 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 				}))
 			_, _ = SendMessageSafe(ctx, h.bot, msgReply)
 		}
-		h.fsm.Clear(userID)
+		h.fsm.Clear(ctx, userID)
 		return true
 
 	case models.StateAssigningTask:
 		task, err := h.storage.GetTask(ctx, sess.TaskID)
 		if err != nil || task == nil {
 			_, _ = SendMessageSafe(ctx, h.bot, tu.Message(tu.ID(userID), fmt.Sprintf(l.View.NotFound, sess.TaskID)))
-			h.fsm.Clear(userID)
+			h.fsm.Clear(ctx, userID)
 			return true
 		}
 
@@ -1355,13 +1402,12 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 				}))
 			_, _ = SendMessageSafe(ctx, h.bot, msgReply)
 		}
-		h.fsm.Clear(userID)
+		h.fsm.Clear(ctx, userID)
 		return true
 	}
 
 	return false
 }
-
 
 func (h *EditHandler) FSM() *FSM {
 	return h.fsm
@@ -1429,4 +1475,3 @@ func cleanAlertText(s string) string {
 	clean = strings.ReplaceAll(clean, "</code>", "")
 	return clean
 }
-

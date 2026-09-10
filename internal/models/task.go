@@ -248,3 +248,26 @@ type User struct {
 	FirstName string    `json:"first_name"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+type HistoryEntry struct {
+	ID         int64     `json:"id"`
+	TaskID     string    `json:"task_id"`
+	AuthorID   int64     `json:"author_id"`
+	AuthorName string    `json:"author_name"`
+	Action     string    `json:"action"`
+	OldValue   string    `json:"old_value"`
+	NewValue   string    `json:"new_value"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+const (
+	HistoryActionCreated  = "created"
+	HistoryActionStatus   = "status"
+	HistoryActionPriority = "priority"
+	HistoryActionAssignee = "assignee"
+	HistoryActionTitle    = "title"
+	HistoryActionDesc     = "description"
+	HistoryActionLabels   = "labels"
+	HistoryActionArchive  = "archive"
+	HistoryActionReopen   = "reopen"
+)

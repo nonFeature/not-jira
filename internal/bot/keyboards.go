@@ -161,6 +161,11 @@ func BuildTaskInlineKeyboard(task *models.Task, userID int64, isAdmin bool, isDe
 		})
 	}
 
+	// History
+	rows = append(rows, []telego.InlineKeyboardButton{
+		emoji.MakeInlineButton(l.Buttons.History, fmt.Sprintf("history:%s", task.ID), "", emoji.ID_HISTORY, "📜", ""),
+	})
+
 	// Bottom row
 	var bottomRow []telego.InlineKeyboardButton
 	if task.MessageLink != "" {
@@ -184,6 +189,16 @@ func BuildTaskInlineKeyboard(task *models.Task, userID int64, isAdmin bool, isDe
 	rows = append(rows, bottomRow)
 
 	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{InlineKeyboard: rows})
+}
+
+func BuildHistoryKeyboard(taskID string, l *locales.Bundle) *telego.InlineKeyboardMarkup {
+	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{
+		InlineKeyboard: [][]telego.InlineKeyboardButton{
+			{
+				emoji.MakeInlineButton(fmt.Sprintf(l.Buttons.BackToTask, taskID), fmt.Sprintf("view:%s", taskID), "", emoji.ID_ARROW_L, "⬅️", ""),
+			},
+		},
+	})
 }
 
 func BuildSubtasksManageKeyboard(task *models.Task, l *locales.Bundle) *telego.InlineKeyboardMarkup {
