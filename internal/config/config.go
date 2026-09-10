@@ -23,6 +23,8 @@ type TelegramConfig struct {
 	DevIDs       []int64 `yaml:"dev_ids"`
 	BugsTopicID  int     `yaml:"bugs_topic_id"`
 	IdeasTopicID int     `yaml:"ideas_topic_id"`
+	ForumChatID  int64   `yaml:"forum_chat_id"`
+	ForumURL     string  `yaml:"forum_url"`
 }
 
 type DatabaseConfig struct {
@@ -116,6 +118,14 @@ func Load(path string) (*Config, error) {
 		if id, err := strconv.Atoi(ideasTopic); err == nil {
 			cfg.Telegram.IdeasTopicID = id
 		}
+	}
+	if forumChat := os.Getenv("TELEGRAM_FORUM_CHAT_ID"); forumChat != "" {
+		if id, err := strconv.ParseInt(forumChat, 10, 64); err == nil {
+			cfg.Telegram.ForumChatID = id
+		}
+	}
+	if forumURL := os.Getenv("TELEGRAM_FORUM_URL"); forumURL != "" {
+		cfg.Telegram.ForumURL = forumURL
 	}
 	if dbPath := os.Getenv("DATABASE_PATH"); dbPath != "" {
 		cfg.Database.Path = dbPath

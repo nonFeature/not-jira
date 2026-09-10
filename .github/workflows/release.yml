@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Тег релиза (например v1.0.0) — будет создан автоматически"
+        required: true
+        type: string
+      title:
+        description: "Название релиза (по умолчанию — тег)"
+        required: false
+        type: string
+      draft:
+        description: "Создать как черновик"
+        required: false
+        type: boolean
+        default: false
+      prerelease:
+        description: "Отметить как pre-release"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: amd64
+          VERSION: ${{ inputs.tag }}
+        run: |
+          out="dist/not-jira_${VERSION}_linux_amd64"
+          mkdir -p dist
+          go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "$out" ./cmd/bot
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: not-jira_linux_amd64
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          TITLE: ${{ inputs.title }}
+          DRAFT: ${{ inputs.draft }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          if [ -z "$TITLE" ]; then TITLE="$TAG"; fi
+          args=(--title "$TITLE" --generate-notes --target "$GITHUB_SHA")
+          if [ "$DRAFT" = "true" ]; then args+=(--draft); fi
+          if [ "$PRERELEASE" = "true" ]; then args+=(--prerelease); fi
+          gh release create "$TAG" dist/* "${args[@]}"

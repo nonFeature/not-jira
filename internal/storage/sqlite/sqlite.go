@@ -87,12 +87,22 @@ func (s *SQLiteStorage) initSchema() error {
 			first_name TEXT NOT NULL DEFAULT '',
 			updated_at DATETIME NOT NULL
 		);`,
+		`CREATE TABLE IF NOT EXISTS task_counters (
+			type TEXT PRIMARY KEY,
+			last_num INTEGER NOT NULL DEFAULT -1
+		);`,
 	}
 
 	for _, q := range createTables {
 		if _, err := s.db.Exec(q); err != nil {
 			return err
 		}
+	}
+
+	if _, err := s.db.Exec(`INSERT INTO task_counters (type, last_num)
+		SELECT type, MAX(num) FROM tasks WHERE num >= 0 GROUP BY type
+		ON CONFLICT(type) DO NOTHING`); err != nil {
+		return err
 	}
 
 	// Migrations for existing databases (must run before creating indexes on newly added columns)
@@ -133,6 +143,27 @@ func (s *SQLiteStorage) GetNextTaskID(ctx context.Context, taskType models.TaskT
 
 	id := fmt.Sprintf("%s%d", taskType.Prefix(), nextNum)
 	return id, nextNum, nil
+}
+
+func (s *SQLiteStorage) nextTaskNum(ctx context.Context, taskType models.TaskType) (int, error) {
+	row := s.db.QueryRowContext(ctx,
+		`INSERT INTO task_counters (type, last_num) VALUES (?, 0)
+		ON CONFLICT(type) DO UPDATE SET last_num = last_num + 1
+		RETURNING last_num`, string(taskType))
+	var num int
+	if err := row.Scan(&num); err != nil {
+		return 0, fmt.Errorf("failed to allocate task num: %w", err)
+	}
+	return num, nil
+}
+
+func (s *SQLiteStorage) syncTaskCounter(ctx context.Context, taskType models.TaskType) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO task_counters (type, last_num)
+		SELECT ?, COALESCE(MAX(num), -1) FROM tasks WHERE type = ?
+		ON CONFLICT(type) DO UPDATE SET last_num = MAX(last_num, excluded.last_num)`,
+		string(taskType), string(taskType))
+	return err
 }
 
 func encodeLabels(labels []string) string {
@@ -188,7 +219,7 @@ func (s *SQLiteStorage) CreateTask(ctx context.Context, task *models.Task) error
 		archivedInt = 1
 	}
 
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := 0; attempt < 4; attempt++ {
 		_, err := s.db.ExecContext(ctx, query,
 			task.ID, task.Num, task.Type, task.Title, task.Description, task.Status,
 			task.ChatID, task.TopicID, task.MessageID, task.MessageLink,
@@ -199,18 +230,21 @@ func (s *SQLiteStorage) CreateTask(ctx context.Context, task *models.Task) error
 		if err == nil {
 			return nil
 		}
-		if strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
-			// Recalculate next ID and retry
-			nextID, nextNum, idErr := s.GetNextTaskID(ctx, task.Type)
-			if idErr == nil {
-				task.ID = nextID
-				task.Num = nextNum
-				continue
-			}
+		if !strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
+			return err
 		}
-		return err
+
+		if err := s.syncTaskCounter(ctx, task.Type); err != nil {
+			return err
+		}
+		num, err := s.nextTaskNum(ctx, task.Type)
+		if err != nil {
+			return err
+		}
+		task.Num = num
+		task.ID = fmt.Sprintf("%s%d", task.Type.Prefix(), num)
 	}
-	return fmt.Errorf("failed to create task after 3 attempts")
+	return fmt.Errorf("failed to create task after retries")
 }
 
 func (s *SQLiteStorage) GetTask(ctx context.Context, id string) (*models.Task, error) {
@@ -378,6 +412,9 @@ func (s *SQLiteStorage) ListTasks(ctx context.Context, filter storage.TaskFilter
 		t.Labels = decodeLabels(labelsStr)
 		tasks = append(tasks, t)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
 
 	return tasks, totalCount, nil
 }
@@ -501,6 +538,9 @@ func (s *SQLiteStorage) GetSubtasks(ctx context.Context, taskID string) ([]model
 		}
 		subtasks = append(subtasks, sub)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return subtasks, nil
 }
 
@@ -554,6 +594,9 @@ func (s *SQLiteStorage) GetComments(ctx context.Context, taskID string) ([]model
 			return nil, err
 		}
 		comments = append(comments, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return comments, nil
 }

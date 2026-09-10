@@ -11,6 +11,8 @@ func GetEn() *Bundle {
 			AdminOnly:       fmt.Sprintf("%s Admin only.", emoji.Lock()),
 			Cancelled:       "Cancelled.",
 			OnlyTextAllowed: fmt.Sprintf("%s Only text messages are supported. Please send a text message.", emoji.Cross()),
+			ForumRequired:   fmt.Sprintf("%s Task access is restricted to forum members.", emoji.Lock()),
+			JoinForumLink:   "\n\n<a href=\"%s\">Join the forum</a>",
 		},
 		Start: Start{
 			GreetingUser: fmt.Sprintf("%s <b><a href=\"https://github.com/nonFeature/not-jira\">not-jira</a></b> — topic task tracker\n\n"+

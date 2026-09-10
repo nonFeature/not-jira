@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -607,5 +608,68 @@ func TestCreateTaskCollisionRetry(t *testing.T) {
 	}
 }
 
+func TestConcurrentCreateTask(t *testing.T) {
+	st, cleanup := setupTestDB(t)
+	defer cleanup()
 
+	ctx := context.Background()
+	const workers = 20
 
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	ids := make(chan string, workers)
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			id, num, err := st.GetNextTaskID(ctx, models.TaskTypeBug)
+			if err != nil {
+				errs <- err
+				return
+			}
+
+			task := &models.Task{
+				ID:          id,
+				Num:         num,
+				Type:        models.TaskTypeBug,
+				Title:       "concurrent task",
+				Description: "desc",
+				Status:      models.StatusNew,
+			}
+			if err := st.CreateTask(ctx, task); err != nil {
+				errs <- err
+				return
+			}
+			ids <- task.ID
+		}()
+	}
+
+	wg.Wait()
+	close(errs)
+	close(ids)
+
+	for err := range errs {
+		t.Fatalf("concurrent CreateTask failed: %v", err)
+	}
+
+	seen := make(map[string]bool)
+	for id := range ids {
+		if seen[id] {
+			t.Errorf("duplicate task ID generated: %s", id)
+		}
+		seen[id] = true
+	}
+	if len(seen) != workers {
+		t.Errorf("expected %d unique task IDs, got %d", workers, len(seen))
+	}
+
+	_, total, err := st.ListTasks(ctx, storage.TaskFilter{}, 0, workers+1)
+	if err != nil {
+		t.Fatalf("ListTasks failed: %v", err)
+	}
+	if total != workers {
+		t.Errorf("expected %d tasks in storage, got %d", workers, total)
+	}
+}

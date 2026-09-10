@@ -15,6 +15,8 @@ import (
 	"not-jira/internal/storage/sqlite"
 )
 
+var version = "dev"
+
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to YAML configuration file")
 	flag.Parse()
@@ -25,7 +27,7 @@ func main() {
 		log.SetOutput(io.MultiWriter(os.Stdout, logFile))
 	}
 
-	log.Println("[Main] Starting not-jira...")
+	log.Printf("[Main] Starting not-jira %s...", version)
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {

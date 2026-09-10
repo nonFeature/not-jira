@@ -24,6 +24,8 @@ type Common struct {
 	AdminOnly       string
 	Cancelled       string
 	OnlyTextAllowed string
+	ForumRequired   string
+	JoinForumLink   string
 }
 
 type Start struct {

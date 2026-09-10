@@ -11,6 +11,8 @@ func GetRu() *Bundle {
 			AdminOnly:       fmt.Sprintf("%s Доступно только администраторам.", emoji.Lock()),
 			Cancelled:       "Действие отменено.",
 			OnlyTextAllowed: fmt.Sprintf("%s Поддерживается только текст. Пожалуйста, отправьте текстовое сообщение.", emoji.Cross()),
+			ForumRequired:   fmt.Sprintf("%s Доступ к задачам открыт только участникам форума.", emoji.Lock()),
+			JoinForumLink:   "\n\n<a href=\"%s\">Вступить в форум</a>",
 		},
 		Start: Start{
 			GreetingUser: fmt.Sprintf("%s <b><a href=\"https://github.com/nonFeature/not-jira\">not-jira</a></b> — трекер задач в топиках\n\n"+

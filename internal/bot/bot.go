@@ -35,7 +35,8 @@ type BotService struct {
 	sem chan struct{}
 	wg  sync.WaitGroup
 
-	limiter *UserRateLimiter
+	limiter     *UserRateLimiter
+	memberCache *memberCache
 }
 
 func New(cfg *config.Config, st storage.Storage, sm *ai.Summarizer) (*BotService, error) {
@@ -93,6 +94,7 @@ func New(cfg *config.Config, st storage.Storage, sm *ai.Summarizer) (*BotService
 		notifier:    notifier,
 		sem:         make(chan struct{}, 30),
 		limiter:     NewUserRateLimiter(5, 1*time.Second),
+		memberCache: newMemberCache(),
 	}
 
 	return s, nil
@@ -168,6 +170,7 @@ func (s *BotService) runAutoArchive(ctx context.Context) {
 		log.Printf("[FSM] Cleaned up %d expired session(s).", cleanedFSM)
 	}
 	s.limiter.Cleanup(10 * time.Minute)
+	s.memberCache.cleanup(24 * time.Hour)
 }
 
 func (s *BotService) dispatchUpdate(ctx context.Context, update telego.Update) {
@@ -194,6 +197,11 @@ func (s *BotService) dispatchUpdate(ctx context.Context, update telego.Update) {
 		if update.CallbackQuery != nil {
 			_ = s.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(update.CallbackQuery.ID).WithText("⚠️ Слишком много запросов. Подождите секунду."))
 		}
+		return
+	}
+
+	if userID != 0 && !s.isForumMember(ctx, userID) {
+		s.rejectNonMember(ctx, update, userID)
 		return
 	}
 
