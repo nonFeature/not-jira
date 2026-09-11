@@ -98,6 +98,65 @@ func TestBuildMyTasksKeyboard(t *testing.T) {
 	}
 }
 
+func TestBuildMyTasksKeyboard_SinglePage(t *testing.T) {
+	l := locales.ForUser("ru")
+	tasks := []models.Task{
+		{
+			ID:     "B1",
+			Title:  "Fix login crash",
+			Status: models.StatusInProgress,
+		},
+	}
+
+	// When totalPages == 1, no pagination row should be rendered
+	kb := BuildMyTasksKeyboard(tasks, "assigned", 0, 1, l)
+	if kb == nil || len(kb.InlineKeyboard) != 3 {
+		t.Fatalf("expected exactly 3 rows (tabs, task, return), got %d: %+v", len(kb.InlineKeyboard), kb)
+	}
+	for _, row := range kb.InlineKeyboard {
+		for _, btn := range row {
+			if strings.Contains(btn.CallbackData, "noop") || btn.CallbackData == "my:assigned:1" {
+				t.Errorf("unexpected pagination button found in single-page keyboard: %+v", btn)
+			}
+		}
+	}
+}
+
+func TestBuildListKeyboard_PaginationConditional(t *testing.T) {
+	l := locales.ForUser("ru")
+	tasks := []models.Task{
+		{ID: "B1", Title: "Task 1", Status: models.StatusNew},
+	}
+
+	// 1 page: no pagination row
+	kb1 := BuildListKeyboard(tasks, "ALL", "ALL", "ALL", 0, 1, false, l)
+	hasPageBtn1 := false
+	for _, row := range kb1.InlineKeyboard {
+		for _, btn := range row {
+			if btn.CallbackData == "noop" {
+				hasPageBtn1 = true
+			}
+		}
+	}
+	if hasPageBtn1 {
+		t.Errorf("expected no pagination row when totalPages == 1")
+	}
+
+	// 2 pages: pagination row should exist
+	kb2 := BuildListKeyboard(tasks, "ALL", "ALL", "ALL", 0, 2, false, l)
+	hasPageBtn2 := false
+	for _, row := range kb2.InlineKeyboard {
+		for _, btn := range row {
+			if btn.CallbackData == "noop" {
+				hasPageBtn2 = true
+			}
+		}
+	}
+	if !hasPageBtn2 {
+		t.Errorf("expected pagination row when totalPages == 2")
+	}
+}
+
 func TestRenderTaskCardWithPriorityAndLabels(t *testing.T) {
 	l := locales.ForUser("ru")
 	task := &models.Task{
@@ -364,7 +423,7 @@ func TestBuildSubtasksManageKeyboard(t *testing.T) {
 		},
 	}
 
-	kb := BuildSubtasksManageKeyboard(task, l)
+	kb := BuildSubtasksManageKeyboard(task, 0, l)
 	if kb == nil || len(kb.InlineKeyboard) < 4 {
 		t.Fatalf("unexpected keyboard structure: %+v", kb)
 	}
@@ -374,8 +433,8 @@ func TestBuildSubtasksManageKeyboard(t *testing.T) {
 	if len(row0) != 1 {
 		t.Fatalf("expected 1 button for subtask 1, got %d", len(row0))
 	}
-	if row0[0].CallbackData != "sub_item:1:B20" {
-		t.Errorf("expected callback sub_item:1:B20, got %s", row0[0].CallbackData)
+	if row0[0].CallbackData != "sub_item:1:B20:0" {
+		t.Errorf("expected callback sub_item:1:B20:0, got %s", row0[0].CallbackData)
 	}
 	if !strings.Contains(row0[0].Text, "1. Subtask 1") {
 		t.Errorf("expected text to contain '1. Subtask 1', got %s", row0[0].Text)
@@ -389,8 +448,8 @@ func TestBuildSubtasksManageKeyboard(t *testing.T) {
 	if len(row1) != 1 {
 		t.Fatalf("expected 1 button for subtask 2, got %d", len(row1))
 	}
-	if row1[0].CallbackData != "sub_item:2:B20" {
-		t.Errorf("expected callback sub_item:2:B20, got %s", row1[0].CallbackData)
+	if row1[0].CallbackData != "sub_item:2:B20:0" {
+		t.Errorf("expected callback sub_item:2:B20:0, got %s", row1[0].CallbackData)
 	}
 	if !strings.Contains(row1[0].Text, "2. Subtask 2") {
 		t.Errorf("expected text to contain '2. Subtask 2', got %s", row1[0].Text)
@@ -416,6 +475,28 @@ func TestBuildSubtasksManageKeyboard(t *testing.T) {
 	if backRow[0].CallbackData != "view:B20" {
 		t.Errorf("expected callback view:B20 for back button, got %s", backRow[0].CallbackData)
 	}
+
+	// Test pagination row when total subtasks > 5
+	manyTask := &models.Task{
+		ID: "B20",
+		Subtasks: []models.Subtask{
+			{ID: 1, TaskID: "B20", Title: "Sub 1"},
+			{ID: 2, TaskID: "B20", Title: "Sub 2"},
+			{ID: 3, TaskID: "B20", Title: "Sub 3"},
+			{ID: 4, TaskID: "B20", Title: "Sub 4"},
+			{ID: 5, TaskID: "B20", Title: "Sub 5"},
+			{ID: 6, TaskID: "B20", Title: "Sub 6"},
+		},
+	}
+	kbMany := BuildSubtasksManageKeyboard(manyTask, 0, l)
+	// Expect 5 items + pagination row + action row + back row = 8 rows
+	if len(kbMany.InlineKeyboard) != 8 {
+		t.Fatalf("expected 8 rows for 6 subtasks on page 0, got %d", len(kbMany.InlineKeyboard))
+	}
+	pageRow := kbMany.InlineKeyboard[5]
+	if len(pageRow) != 3 || pageRow[2].CallbackData != "manage_sub:B20:1" {
+		t.Errorf("expected next page button in pagination row, got %+v", pageRow)
+	}
 }
 
 func TestBuildSubtaskItemKeyboard(t *testing.T) {
@@ -427,7 +508,7 @@ func TestBuildSubtaskItemKeyboard(t *testing.T) {
 		IsDone: false,
 	}
 
-	kb := BuildSubtaskItemKeyboard("B20", sub, 1, l)
+	kb := BuildSubtaskItemKeyboard("B20", sub, 1, 0, l)
 	if kb == nil || len(kb.InlineKeyboard) != 3 {
 		t.Fatalf("expected 3 rows in item keyboard, got %d", len(kb.InlineKeyboard))
 	}
@@ -450,13 +531,13 @@ func TestBuildSubtaskItemKeyboard(t *testing.T) {
 	if kb.InlineKeyboard[1][0].CallbackData != "edit_sub:1:B20" {
 		t.Errorf("expected edit_sub:1:B20, got %s", kb.InlineKeyboard[1][0].CallbackData)
 	}
-	if kb.InlineKeyboard[1][1].CallbackData != "del_sub:1:B20" {
-		t.Errorf("expected del_sub:1:B20, got %s", kb.InlineKeyboard[1][1].CallbackData)
+	if kb.InlineKeyboard[1][1].CallbackData != "del_sub:1:B20:0" {
+		t.Errorf("expected del_sub:1:B20:0, got %s", kb.InlineKeyboard[1][1].CallbackData)
 	}
 
 	// Row 2: Back to subtasks
-	if kb.InlineKeyboard[2][0].CallbackData != "manage_sub:B20" {
-		t.Errorf("expected manage_sub:B20, got %s", kb.InlineKeyboard[2][0].CallbackData)
+	if kb.InlineKeyboard[2][0].CallbackData != "manage_sub:B20:0" {
+		t.Errorf("expected manage_sub:B20:0, got %s", kb.InlineKeyboard[2][0].CallbackData)
 	}
 }
 
@@ -471,17 +552,17 @@ func TestBuildCommentsManageKeyboard(t *testing.T) {
 	}
 
 	// Non-admin viewing
-	kbUser := BuildCommentsManageKeyboard(task, 100, false, l)
+	kbUser := BuildCommentsManageKeyboard(task, 0, 100, false, l)
 	if kbUser == nil || len(kbUser.InlineKeyboard) < 4 {
 		t.Fatalf("unexpected kbUser structure")
 	}
 	// Comment 10: item selection
-	if len(kbUser.InlineKeyboard[0]) != 1 || kbUser.InlineKeyboard[0][0].CallbackData != "comm_item:10:B21" {
-		t.Errorf("expected comm_item:10:B21 for comment 10")
+	if len(kbUser.InlineKeyboard[0]) != 1 || kbUser.InlineKeyboard[0][0].CallbackData != "comm_item:10:B21:0" {
+		t.Errorf("expected comm_item:10:B21:0 for comment 10")
 	}
 	// Comment 11: item selection
-	if len(kbUser.InlineKeyboard[1]) != 1 || kbUser.InlineKeyboard[1][0].CallbackData != "comm_item:11:B21" {
-		t.Errorf("expected comm_item:11:B21 for comment 11")
+	if len(kbUser.InlineKeyboard[1]) != 1 || kbUser.InlineKeyboard[1][0].CallbackData != "comm_item:11:B21:0" {
+		t.Errorf("expected comm_item:11:B21:0 for comment 11")
 	}
 	// Action row: only Add button (no Clear All for non-admin)
 	if len(kbUser.InlineKeyboard[2]) != 1 || kbUser.InlineKeyboard[2][0].CallbackData != "add_comm_prompt:B21" {
@@ -489,9 +570,29 @@ func TestBuildCommentsManageKeyboard(t *testing.T) {
 	}
 
 	// Admin viewing: can clear all
-	kbAdmin := BuildCommentsManageKeyboard(task, 999, true, l)
+	kbAdmin := BuildCommentsManageKeyboard(task, 0, 999, true, l)
 	if len(kbAdmin.InlineKeyboard[2]) != 2 || kbAdmin.InlineKeyboard[2][1].CallbackData != "clear_comms:B21" {
 		t.Errorf("expected Clear all comments button for admin")
+	}
+
+	// Test pagination with 6 comments
+	manyTask := &models.Task{
+		ID: "B21",
+		Comments: []models.Comment{
+			{ID: 1, TaskID: "B21", Text: "C1"},
+			{ID: 2, TaskID: "B21", Text: "C2"},
+			{ID: 3, TaskID: "B21", Text: "C3"},
+			{ID: 4, TaskID: "B21", Text: "C4"},
+			{ID: 5, TaskID: "B21", Text: "C5"},
+			{ID: 6, TaskID: "B21", Text: "C6"},
+		},
+	}
+	kbMany := BuildCommentsManageKeyboard(manyTask, 0, 999, true, l)
+	if len(kbMany.InlineKeyboard) != 8 {
+		t.Fatalf("expected 8 rows for 6 comments, got %d", len(kbMany.InlineKeyboard))
+	}
+	if kbMany.InlineKeyboard[5][2].CallbackData != "manage_comm:B21:1" {
+		t.Errorf("expected next page button in comments pagination row")
 	}
 }
 
@@ -505,7 +606,7 @@ func TestBuildCommentItemKeyboard(t *testing.T) {
 		Text:       "First comment",
 	}
 
-	kb := BuildCommentItemKeyboard("B21", comm, 1, l)
+	kb := BuildCommentItemKeyboard("B21", comm, 1, 0, l)
 	if kb == nil || len(kb.InlineKeyboard) != 3 {
 		t.Fatalf("expected 3 rows in item keyboard, got %d", len(kb.InlineKeyboard))
 	}
@@ -525,13 +626,13 @@ func TestBuildCommentItemKeyboard(t *testing.T) {
 	if kb.InlineKeyboard[1][0].CallbackData != "edit_comm:10:B21" {
 		t.Errorf("expected edit_comm:10:B21, got %s", kb.InlineKeyboard[1][0].CallbackData)
 	}
-	if kb.InlineKeyboard[1][1].CallbackData != "del_comm:10:B21" {
-		t.Errorf("expected del_comm:10:B21, got %s", kb.InlineKeyboard[1][1].CallbackData)
+	if kb.InlineKeyboard[1][1].CallbackData != "del_comm:10:B21:0" {
+		t.Errorf("expected del_comm:10:B21:0, got %s", kb.InlineKeyboard[1][1].CallbackData)
 	}
 
 	// Row 2: Back to comments
-	if kb.InlineKeyboard[2][0].CallbackData != "manage_comm:B21" {
-		t.Errorf("expected manage_comm:B21, got %s", kb.InlineKeyboard[2][0].CallbackData)
+	if kb.InlineKeyboard[2][0].CallbackData != "manage_comm:B21:0" {
+		t.Errorf("expected manage_comm:B21:0, got %s", kb.InlineKeyboard[2][0].CallbackData)
 	}
 }
 

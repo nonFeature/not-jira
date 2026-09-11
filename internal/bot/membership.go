@@ -108,7 +108,11 @@ func (s *BotService) rejectNonMember(ctx context.Context, update telego.Update, 
 	}
 
 	if update.CallbackQuery != nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(update.CallbackQuery.ID).WithText(text).WithShowAlert())
+		alertText := cleanAlertText(l.Common.ForumRequired)
+		if s.cfg.Telegram.ForumURL != "" {
+			alertText += "\n" + s.cfg.Telegram.ForumURL
+		}
+		_ = s.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(update.CallbackQuery.ID).WithText(alertText).WithShowAlert())
 		return
 	}
 

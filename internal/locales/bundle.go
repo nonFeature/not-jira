@@ -29,9 +29,17 @@ type History struct {
 	FieldLabels   string
 	Unassigned    string
 	None          string
-	EntryLine     string
-	EventLine     string
-	MetaLine      string
+	EntryLine      string
+	EventLine      string
+	MetaLine       string
+	SubtaskAdded   string
+	SubtaskDone    string
+	SubtaskUndone  string
+	SubtaskDeleted string
+	SubtaskEdited  string
+	CommentAdded   string
+	CommentEdited  string
+	CommentDeleted string
 }
 
 type Backup struct {

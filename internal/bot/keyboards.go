@@ -201,10 +201,34 @@ func BuildHistoryKeyboard(taskID string, l *locales.Bundle) *telego.InlineKeyboa
 	})
 }
 
-func BuildSubtasksManageKeyboard(task *models.Task, l *locales.Bundle) *telego.InlineKeyboardMarkup {
+const (
+	SubtasksPageSize = 5
+	CommentsPageSize = 5
+)
+
+func BuildSubtasksManageKeyboard(task *models.Task, page int, l *locales.Bundle) *telego.InlineKeyboardMarkup {
 	var rows [][]telego.InlineKeyboardButton
 
-	for i, sub := range task.Subtasks {
+	total := len(task.Subtasks)
+	totalPages := (total + SubtasksPageSize - 1) / SubtasksPageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	if page < 0 {
+		page = 0
+	}
+	if page >= totalPages {
+		page = totalPages - 1
+	}
+
+	start := page * SubtasksPageSize
+	end := start + SubtasksPageSize
+	if end > total {
+		end = total
+	}
+
+	for i := start; i < end; i++ {
+		sub := task.Subtasks[i]
 		cleanTitle := emoji.StripCustomEmojis(sub.Title)
 		titleRunes := []rune(cleanTitle)
 		if len(titleRunes) > 40 {
@@ -219,13 +243,55 @@ func BuildSubtasksManageKeyboard(task *models.Task, l *locales.Bundle) *telego.I
 		label := fmt.Sprintf("%d. %s", i+1, cleanTitle)
 		btn := emoji.MakeInlineButton(
 			label,
-			fmt.Sprintf("sub_item:%d:%s", sub.ID, task.ID),
+			fmt.Sprintf("sub_item:%d:%s:%d", sub.ID, task.ID, page),
 			"",
 			emojiID,
 			fallback,
 			"",
 		)
 		rows = append(rows, []telego.InlineKeyboardButton{btn})
+	}
+
+	// Pagination row if totalPages > 1
+	if totalPages > 1 {
+		var pageRow []telego.InlineKeyboardButton
+		if page > 0 {
+			pageRow = append(pageRow, emoji.MakeInlineButton(
+				l.Buttons.PrevPage,
+				fmt.Sprintf("manage_sub:%s:%d", task.ID, page-1),
+				"",
+				emoji.ID_ARROW_L,
+				"⬅️",
+				"",
+			))
+		} else {
+			pageRow = append(pageRow, telego.InlineKeyboardButton{
+				Text:         " ",
+				CallbackData: "noop",
+			})
+		}
+
+		pageRow = append(pageRow, telego.InlineKeyboardButton{
+			Text:         fmt.Sprintf("• %d/%d •", page+1, totalPages),
+			CallbackData: "noop",
+		})
+
+		if page < totalPages-1 {
+			pageRow = append(pageRow, emoji.MakeInlineButton(
+				l.Buttons.NextPage,
+				fmt.Sprintf("manage_sub:%s:%d", task.ID, page+1),
+				"",
+				emoji.ID_ARROW_R,
+				"➡️",
+				"",
+			))
+		} else {
+			pageRow = append(pageRow, telego.InlineKeyboardButton{
+				Text:         " ",
+				CallbackData: "noop",
+			})
+		}
+		rows = append(rows, pageRow)
 	}
 
 	// Action row: [➕ Добавить] [🗑 Очистить все]
@@ -258,7 +324,7 @@ func BuildSubtasksManageKeyboard(task *models.Task, l *locales.Bundle) *telego.I
 	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{InlineKeyboard: rows})
 }
 
-func BuildSubtaskItemKeyboard(taskID string, sub *models.Subtask, itemNum int, l *locales.Bundle) *telego.InlineKeyboardMarkup {
+func BuildSubtaskItemKeyboard(taskID string, sub *models.Subtask, itemNum int, page int, l *locales.Bundle) *telego.InlineKeyboardMarkup {
 	var rows [][]telego.InlineKeyboardButton
 
 	cleanTitle := emoji.StripCustomEmojis(sub.Title)
@@ -296,7 +362,7 @@ func BuildSubtaskItemKeyboard(taskID string, sub *models.Subtask, itemNum int, l
 		),
 		emoji.MakeInlineButton(
 			l.Buttons.DeleteAction,
-			fmt.Sprintf("del_sub:%d:%s", sub.ID, taskID),
+			fmt.Sprintf("del_sub:%d:%s:%d", sub.ID, taskID, page),
 			"",
 			emoji.ID_TRASH,
 			"🗑",
@@ -309,7 +375,7 @@ func BuildSubtaskItemKeyboard(taskID string, sub *models.Subtask, itemNum int, l
 	rows = append(rows, []telego.InlineKeyboardButton{
 		emoji.MakeInlineButton(
 			l.Buttons.BackToSubtasks,
-			fmt.Sprintf("manage_sub:%s", taskID),
+			fmt.Sprintf("manage_sub:%s:%d", taskID, page),
 			"",
 			emoji.ID_ARROW_L,
 			"⬅️",
@@ -320,10 +386,29 @@ func BuildSubtaskItemKeyboard(taskID string, sub *models.Subtask, itemNum int, l
 	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{InlineKeyboard: rows})
 }
 
-func BuildCommentsManageKeyboard(task *models.Task, userID int64, isAdmin bool, l *locales.Bundle) *telego.InlineKeyboardMarkup {
+func BuildCommentsManageKeyboard(task *models.Task, page int, userID int64, isAdmin bool, l *locales.Bundle) *telego.InlineKeyboardMarkup {
 	var rows [][]telego.InlineKeyboardButton
 
-	for i, comm := range task.Comments {
+	total := len(task.Comments)
+	totalPages := (total + CommentsPageSize - 1) / CommentsPageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	if page < 0 {
+		page = 0
+	}
+	if page >= totalPages {
+		page = totalPages - 1
+	}
+
+	start := page * CommentsPageSize
+	end := start + CommentsPageSize
+	if end > total {
+		end = total
+	}
+
+	for i := start; i < end; i++ {
+		comm := task.Comments[i]
 		cleanText := emoji.StripCustomEmojis(comm.Text)
 		cleanText = strings.ReplaceAll(cleanText, "\n", " ")
 		textRunes := []rune(cleanText)
@@ -333,13 +418,55 @@ func BuildCommentsManageKeyboard(task *models.Task, userID int64, isAdmin bool, 
 		label := fmt.Sprintf("%d. @%s: %s", i+1, comm.AuthorName, cleanText)
 		btn := emoji.MakeInlineButton(
 			label,
-			fmt.Sprintf("comm_item:%d:%s", comm.ID, task.ID),
+			fmt.Sprintf("comm_item:%d:%s:%d", comm.ID, task.ID, page),
 			"",
 			emoji.ID_MESSAGES,
 			"💬",
 			"",
 		)
 		rows = append(rows, []telego.InlineKeyboardButton{btn})
+	}
+
+	// Pagination row if totalPages > 1
+	if totalPages > 1 {
+		var pageRow []telego.InlineKeyboardButton
+		if page > 0 {
+			pageRow = append(pageRow, emoji.MakeInlineButton(
+				l.Buttons.PrevPage,
+				fmt.Sprintf("manage_comm:%s:%d", task.ID, page-1),
+				"",
+				emoji.ID_ARROW_L,
+				"⬅️",
+				"",
+			))
+		} else {
+			pageRow = append(pageRow, telego.InlineKeyboardButton{
+				Text:         " ",
+				CallbackData: "noop",
+			})
+		}
+
+		pageRow = append(pageRow, telego.InlineKeyboardButton{
+			Text:         fmt.Sprintf("• %d/%d •", page+1, totalPages),
+			CallbackData: "noop",
+		})
+
+		if page < totalPages-1 {
+			pageRow = append(pageRow, emoji.MakeInlineButton(
+				l.Buttons.NextPage,
+				fmt.Sprintf("manage_comm:%s:%d", task.ID, page+1),
+				"",
+				emoji.ID_ARROW_R,
+				"➡️",
+				"",
+			))
+		} else {
+			pageRow = append(pageRow, telego.InlineKeyboardButton{
+				Text:         " ",
+				CallbackData: "noop",
+			})
+		}
+		rows = append(rows, pageRow)
 	}
 
 	// Action row: [💬 Добавить] [🗑 Очистить все] (if admin)
@@ -372,7 +499,7 @@ func BuildCommentsManageKeyboard(task *models.Task, userID int64, isAdmin bool, 
 	return sanitizeKeyboard(&telego.InlineKeyboardMarkup{InlineKeyboard: rows})
 }
 
-func BuildCommentItemKeyboard(taskID string, comm *models.Comment, itemNum int, l *locales.Bundle) *telego.InlineKeyboardMarkup {
+func BuildCommentItemKeyboard(taskID string, comm *models.Comment, itemNum int, page int, l *locales.Bundle) *telego.InlineKeyboardMarkup {
 	var rows [][]telego.InlineKeyboardButton
 
 	cleanText := emoji.StripCustomEmojis(comm.Text)
@@ -405,7 +532,7 @@ func BuildCommentItemKeyboard(taskID string, comm *models.Comment, itemNum int, 
 		),
 		emoji.MakeInlineButton(
 			l.Buttons.DeleteAction,
-			fmt.Sprintf("del_comm:%d:%s", comm.ID, taskID),
+			fmt.Sprintf("del_comm:%d:%s:%d", comm.ID, taskID, page),
 			"",
 			emoji.ID_TRASH,
 			"🗑",
@@ -418,7 +545,7 @@ func BuildCommentItemKeyboard(taskID string, comm *models.Comment, itemNum int, 
 	rows = append(rows, []telego.InlineKeyboardButton{
 		emoji.MakeInlineButton(
 			l.Buttons.BackToComments,
-			fmt.Sprintf("manage_comm:%s", taskID),
+			fmt.Sprintf("manage_comm:%s:%d", taskID, page),
 			"",
 			emoji.ID_ARROW_L,
 			"⬅️",
@@ -486,36 +613,38 @@ func BuildListKeyboard(tasks []models.Task, currentType, currentStatus, currentT
 		rows = append(rows, []telego.InlineKeyboardButton{btn})
 	}
 
-	// Pagination row
-	var navRow []telego.InlineKeyboardButton
-	if page > 0 {
-		navRow = append(navRow, emoji.MakeInlineButton(
-			l.Buttons.PrevPage,
-			fmt.Sprintf("list:%s:%s:%s:%d", currentType, currentStatus, currentTag, page-1),
-			"",
-			emoji.ID_ARROW_L,
-			"⬅️",
-			"",
-		))
-	}
+	// Pagination row (only if totalPages > 1)
+	if totalPages > 1 {
+		var navRow []telego.InlineKeyboardButton
+		if page > 0 {
+			navRow = append(navRow, emoji.MakeInlineButton(
+				l.Buttons.PrevPage,
+				fmt.Sprintf("list:%s:%s:%s:%d", currentType, currentStatus, currentTag, page-1),
+				"",
+				emoji.ID_ARROW_L,
+				"⬅️",
+				"",
+			))
+		}
 
-	pageLabel := fmt.Sprintf(l.View.PageFormat, page+1, max(1, totalPages))
-	navRow = append(navRow, telego.InlineKeyboardButton{
-		Text:         pageLabel,
-		CallbackData: "noop",
-	})
+		pageLabel := fmt.Sprintf(l.View.PageFormat, page+1, max(1, totalPages))
+		navRow = append(navRow, telego.InlineKeyboardButton{
+			Text:         pageLabel,
+			CallbackData: "noop",
+		})
 
-	if page+1 < totalPages {
-		navRow = append(navRow, emoji.MakeInlineButton(
-			l.Buttons.NextPage,
-			fmt.Sprintf("list:%s:%s:%s:%d", currentType, currentStatus, currentTag, page+1),
-			"",
-			emoji.ID_ARROW_R,
-			"➡️",
-			"",
-		))
+		if page+1 < totalPages {
+			navRow = append(navRow, emoji.MakeInlineButton(
+				l.Buttons.NextPage,
+				fmt.Sprintf("list:%s:%s:%s:%d", currentType, currentStatus, currentTag, page+1),
+				"",
+				emoji.ID_ARROW_R,
+				"➡️",
+				"",
+			))
+		}
+		rows = append(rows, navRow)
 	}
-	rows = append(rows, navRow)
 
 	// Bottom row with Tag filter and optionally My Tasks
 	tagBtnText := l.Filters.AllTags
@@ -696,36 +825,38 @@ func BuildMyTasksKeyboard(tasks []models.Task, currentTab string, page, totalPag
 		rows = append(rows, []telego.InlineKeyboardButton{btn})
 	}
 
-	// Pagination row
-	var navRow []telego.InlineKeyboardButton
-	if page > 0 {
-		navRow = append(navRow, emoji.MakeInlineButton(
-			l.Buttons.PrevPage,
-			fmt.Sprintf("my:%s:%d", currentTab, page-1),
-			"",
-			emoji.ID_ARROW_L,
-			"⬅️",
-			"",
-		))
-	}
+	// Pagination row (only if totalPages > 1)
+	if totalPages > 1 {
+		var navRow []telego.InlineKeyboardButton
+		if page > 0 {
+			navRow = append(navRow, emoji.MakeInlineButton(
+				l.Buttons.PrevPage,
+				fmt.Sprintf("my:%s:%d", currentTab, page-1),
+				"",
+				emoji.ID_ARROW_L,
+				"⬅️",
+				"",
+			))
+		}
 
-	pageLabel := fmt.Sprintf(l.View.PageFormat, page+1, max(1, totalPages))
-	navRow = append(navRow, telego.InlineKeyboardButton{
-		Text:         pageLabel,
-		CallbackData: "noop",
-	})
+		pageLabel := fmt.Sprintf(l.View.PageFormat, page+1, max(1, totalPages))
+		navRow = append(navRow, telego.InlineKeyboardButton{
+			Text:         pageLabel,
+			CallbackData: "noop",
+		})
 
-	if page+1 < totalPages {
-		navRow = append(navRow, emoji.MakeInlineButton(
-			l.Buttons.NextPage,
-			fmt.Sprintf("my:%s:%d", currentTab, page+1),
-			"",
-			emoji.ID_ARROW_R,
-			"➡️",
-			"",
-		))
+		if page+1 < totalPages {
+			navRow = append(navRow, emoji.MakeInlineButton(
+				l.Buttons.NextPage,
+				fmt.Sprintf("my:%s:%d", currentTab, page+1),
+				"",
+				emoji.ID_ARROW_R,
+				"➡️",
+				"",
+			))
+		}
+		rows = append(rows, navRow)
 	}
-	rows = append(rows, navRow)
 
 	// Return to full list button
 	rows = append(rows, []telego.InlineKeyboardButton{

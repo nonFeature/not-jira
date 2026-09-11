@@ -717,6 +717,21 @@ func TestHistoryAndSessions(t *testing.T) {
 		t.Errorf("expected latest entry only, got %+v", limited)
 	}
 
+	// Add subtask and comment history entries
+	if err := st.AddHistory(ctx, &models.HistoryEntry{TaskID: "B0", AuthorID: 1, AuthorName: "admin", Action: models.HistoryActionSubtaskAdd, NewValue: "Write tests"}); err != nil {
+		t.Fatalf("AddHistory subtask failed: %v", err)
+	}
+	if err := st.AddHistory(ctx, &models.HistoryEntry{TaskID: "B0", AuthorID: 1, AuthorName: "admin", Action: models.HistoryActionCommentAdd, NewValue: "Looks good"}); err != nil {
+		t.Fatalf("AddHistory comment failed: %v", err)
+	}
+	allEntries, err := st.GetHistory(ctx, "B0", 10)
+	if err != nil || len(allEntries) != 4 {
+		t.Fatalf("expected 4 history entries, got %d, err: %v", len(allEntries), err)
+	}
+	if allEntries[2].Action != models.HistoryActionSubtaskAdd || allEntries[3].Action != models.HistoryActionCommentAdd {
+		t.Errorf("unexpected actions in history: %+v", allEntries)
+	}
+
 	session := &models.UserSession{
 		State:     models.StateCreatingTaskDesc,
 		TaskID:    "B0",

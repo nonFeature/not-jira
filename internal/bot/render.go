@@ -289,6 +289,24 @@ func renderHistoryEntry(e models.HistoryEntry, l *locales.Bundle) string {
 	case models.HistoryActionLabels:
 		return fmt.Sprintf(l.History.EntryLine, l.History.FieldLabels,
 			historyValue(e.OldValue, l.History.None), historyValue(e.NewValue, l.History.None))
+	case models.HistoryActionSubtaskAdd:
+		return fmt.Sprintf(l.History.SubtaskAdded, historyValue(truncateText(e.NewValue, 80), l.History.None))
+	case models.HistoryActionSubtaskDone:
+		return fmt.Sprintf(l.History.SubtaskDone, historyValue(truncateText(e.NewValue, 80), l.History.None))
+	case models.HistoryActionSubtaskUndone:
+		return fmt.Sprintf(l.History.SubtaskUndone, historyValue(truncateText(e.NewValue, 80), l.History.None))
+	case models.HistoryActionSubtaskDelete:
+		return fmt.Sprintf(l.History.SubtaskDeleted, historyValue(truncateText(e.OldValue, 80), l.History.None))
+	case models.HistoryActionSubtaskEdit:
+		return fmt.Sprintf(l.History.SubtaskEdited,
+			historyValue(truncateText(e.OldValue, 50), l.History.None), historyValue(truncateText(e.NewValue, 50), l.History.None))
+	case models.HistoryActionCommentAdd:
+		return fmt.Sprintf(l.History.CommentAdded, historyValue(truncateText(e.NewValue, 100), l.History.None))
+	case models.HistoryActionCommentEdit:
+		return fmt.Sprintf(l.History.CommentEdited,
+			historyValue(truncateText(e.OldValue, 50), l.History.None), historyValue(truncateText(e.NewValue, 50), l.History.None))
+	case models.HistoryActionCommentDelete:
+		return fmt.Sprintf(l.History.CommentDeleted, historyValue(truncateText(e.OldValue, 80), l.History.None))
 	default:
 		return fmt.Sprintf(l.History.EventLine, html.EscapeString(e.Action))
 	}

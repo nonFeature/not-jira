@@ -308,10 +308,18 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 
-		_, err := h.storage.ToggleSubtask(ctx, subID)
+		sub, err := h.storage.ToggleSubtask(ctx, subID)
 		if err != nil {
 			_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID).WithText("❌ Toggle error"))
 			return
+		}
+
+		if sub != nil {
+			action := models.HistoryActionSubtaskUndone
+			if sub.IsDone {
+				action = models.HistoryActionSubtaskDone
+			}
+			recordHistory(ctx, h.storage, taskID, &query.From, action, "", sub.Title)
 		}
 
 		_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID))
@@ -379,8 +387,14 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 	}
 
 	if strings.HasPrefix(data, "manage_sub:") || strings.HasPrefix(data, "add_sub:") {
-		taskID := strings.TrimPrefix(data, "manage_sub:")
-		taskID = strings.TrimPrefix(taskID, "add_sub:")
+		payload := strings.TrimPrefix(data, "manage_sub:")
+		payload = strings.TrimPrefix(payload, "add_sub:")
+		parts := strings.Split(payload, ":")
+		taskID := parts[0]
+		page := 0
+		if len(parts) >= 2 {
+			page, _ = strconv.Atoi(parts[1])
+		}
 		task, err := h.storage.GetTask(ctx, taskID)
 		if err != nil || task == nil {
 			h.answerAlert(ctx, query.ID, fmt.Sprintf(l.View.NotFound, taskID), false)
@@ -401,7 +415,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 		}
 
 		cardHTML := RenderTaskCard(task, l)
-		kb := BuildSubtasksManageKeyboard(task, l)
+		kb := BuildSubtasksManageKeyboard(task, page, l)
 		editMsg := &telego.EditMessageTextParams{
 			ChatID:      tu.ID(query.Message.GetChat().ID),
 			MessageID:   query.Message.GetMessageID(),
@@ -415,9 +429,9 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 	}
 
 	if strings.HasPrefix(data, "sub_item:") {
-		// sub_item:{subtask_id}:{task_id}
+		// sub_item:{subtask_id}:{task_id} or sub_item:{subtask_id}:{task_id}:{page}
 		parts := strings.Split(data, ":")
-		if len(parts) != 3 {
+		if len(parts) < 3 {
 			return
 		}
 		subID, err := strconv.ParseInt(parts[1], 10, 64)
@@ -425,6 +439,10 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 		taskID := parts[2]
+		page := 0
+		if len(parts) >= 4 {
+			page, _ = strconv.Atoi(parts[3])
+		}
 
 		task, err := h.storage.GetTask(ctx, taskID)
 		if err != nil || task == nil {
@@ -451,7 +469,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 		}
 
 		cardHTML := RenderTaskCard(task, l)
-		kb := BuildSubtaskItemKeyboard(task.ID, targetSub, itemNum, l)
+		kb := BuildSubtaskItemKeyboard(task.ID, targetSub, itemNum, page, l)
 		editMsg := &telego.EditMessageTextParams{
 			ChatID:      tu.ID(query.Message.GetChat().ID),
 			MessageID:   query.Message.GetMessageID(),
@@ -517,9 +535,9 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 	}
 
 	if strings.HasPrefix(data, "del_sub:") {
-		// del_sub:{subtask_id}:{task_id}
+		// del_sub:{subtask_id}:{task_id} or del_sub:{subtask_id}:{task_id}:{page}
 		parts := strings.Split(data, ":")
-		if len(parts) != 3 {
+		if len(parts) < 3 {
 			return
 		}
 		subID, err := strconv.ParseInt(parts[1], 10, 64)
@@ -527,6 +545,10 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 		taskID := parts[2]
+		page := 0
+		if len(parts) >= 4 {
+			page, _ = strconv.Atoi(parts[3])
+		}
 
 		task, err := h.storage.GetTask(ctx, taskID)
 		if err != nil || task == nil {
@@ -538,11 +560,20 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 
+		var subTitle string
+		for _, s := range task.Subtasks {
+			if s.ID == subID {
+				subTitle = s.Title
+				break
+			}
+		}
+
 		if err := h.storage.DeleteSubtask(ctx, subID); err != nil {
 			_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID).WithText("❌ Delete error"))
 			return
 		}
 
+		recordHistory(ctx, h.storage, taskID, &query.From, models.HistoryActionSubtaskDelete, subTitle, "")
 		h.answerAlert(ctx, query.ID, l.Edit.SubtaskDeletedAlert, false)
 
 		task, _ = h.storage.GetTask(ctx, taskID)
@@ -550,7 +581,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			cardHTML := RenderTaskCard(task, l)
 			var kb *telego.InlineKeyboardMarkup
 			if len(task.Subtasks) > 0 {
-				kb = BuildSubtasksManageKeyboard(task, l)
+				kb = BuildSubtasksManageKeyboard(task, page, l)
 			} else {
 				kb = BuildTaskInlineKeyboard(task, userID, isAdmin, h.cfg.Telegram.IsDev(userID), l)
 			}
@@ -578,9 +609,14 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 
+		count := len(task.Subtasks)
 		if err := h.storage.ClearSubtasks(ctx, taskID); err != nil {
 			_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID).WithText("❌ Clear error"))
 			return
+		}
+
+		if count > 0 {
+			recordHistory(ctx, h.storage, taskID, &query.From, models.HistoryActionSubtaskDelete, fmt.Sprintf("%d", count), "")
 		}
 
 		h.answerAlert(ctx, query.ID, l.Edit.SubtasksClearedAlert, false)
@@ -593,8 +629,14 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 	}
 
 	if strings.HasPrefix(data, "manage_comm:") || strings.HasPrefix(data, "add_comm:") {
-		taskID := strings.TrimPrefix(data, "manage_comm:")
-		taskID = strings.TrimPrefix(taskID, "add_comm:")
+		payload := strings.TrimPrefix(data, "manage_comm:")
+		payload = strings.TrimPrefix(payload, "add_comm:")
+		parts := strings.Split(payload, ":")
+		taskID := parts[0]
+		page := 0
+		if len(parts) >= 2 {
+			page, _ = strconv.Atoi(parts[1])
+		}
 		task, err := h.storage.GetTask(ctx, taskID)
 		if err != nil || task == nil {
 			h.answerAlert(ctx, query.ID, fmt.Sprintf(l.View.NotFound, taskID), false)
@@ -615,7 +657,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 		}
 
 		cardHTML := RenderTaskCard(task, l)
-		kb := BuildCommentsManageKeyboard(task, userID, isAdmin, l)
+		kb := BuildCommentsManageKeyboard(task, page, userID, isAdmin, l)
 		editMsg := &telego.EditMessageTextParams{
 			ChatID:      tu.ID(query.Message.GetChat().ID),
 			MessageID:   query.Message.GetMessageID(),
@@ -629,9 +671,9 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 	}
 
 	if strings.HasPrefix(data, "comm_item:") {
-		// comm_item:{comment_id}:{task_id}
+		// comm_item:{comment_id}:{task_id} or comm_item:{comment_id}:{task_id}:{page}
 		parts := strings.Split(data, ":")
-		if len(parts) != 3 {
+		if len(parts) < 3 {
 			return
 		}
 		commID, err := strconv.ParseInt(parts[1], 10, 64)
@@ -639,6 +681,10 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 		taskID := parts[2]
+		page := 0
+		if len(parts) >= 4 {
+			page, _ = strconv.Atoi(parts[3])
+		}
 
 		task, err := h.storage.GetTask(ctx, taskID)
 		if err != nil || task == nil {
@@ -667,7 +713,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 		}
 
 		cardHTML := RenderTaskCard(task, l)
-		kb := BuildCommentItemKeyboard(task.ID, targetComment, itemNum, l)
+		kb := BuildCommentItemKeyboard(task.ID, targetComment, itemNum, page, l)
 		editMsg := &telego.EditMessageTextParams{
 			ChatID:      tu.ID(query.Message.GetChat().ID),
 			MessageID:   query.Message.GetMessageID(),
@@ -746,9 +792,9 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 	}
 
 	if strings.HasPrefix(data, "del_comm:") {
-		// del_comm:{comment_id}:{task_id}
+		// del_comm:{comment_id}:{task_id} or del_comm:{comment_id}:{task_id}:{page}
 		parts := strings.Split(data, ":")
-		if len(parts) != 3 {
+		if len(parts) < 3 {
 			return
 		}
 		commID, err := strconv.ParseInt(parts[1], 10, 64)
@@ -756,6 +802,10 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 		taskID := parts[2]
+		page := 0
+		if len(parts) >= 4 {
+			page, _ = strconv.Atoi(parts[3])
+		}
 
 		task, err := h.storage.GetTask(ctx, taskID)
 		if err != nil || task == nil {
@@ -780,11 +830,13 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 
+		commentText := targetComment.Text
 		if err := h.storage.DeleteComment(ctx, commID); err != nil {
 			_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID).WithText("❌ Delete error"))
 			return
 		}
 
+		recordHistory(ctx, h.storage, taskID, &query.From, models.HistoryActionCommentDelete, commentText, "")
 		h.answerAlert(ctx, query.ID, l.Edit.CommentDeletedAlert, false)
 
 		task, _ = h.storage.GetTask(ctx, taskID)
@@ -792,7 +844,7 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			cardHTML := RenderTaskCard(task, l)
 			var kb *telego.InlineKeyboardMarkup
 			if len(task.Comments) > 0 {
-				kb = BuildCommentsManageKeyboard(task, userID, isAdmin, l)
+				kb = BuildCommentsManageKeyboard(task, page, userID, isAdmin, l)
 			} else {
 				kb = BuildTaskInlineKeyboard(task, userID, isAdmin, h.cfg.Telegram.IsDev(userID), l)
 			}
@@ -820,9 +872,14 @@ func (h *EditHandler) HandleCallback(ctx context.Context, query *telego.Callback
 			return
 		}
 
+		count := len(task.Comments)
 		if err := h.storage.ClearComments(ctx, taskID); err != nil {
 			_ = h.bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID).WithText("❌ Clear error"))
 			return
+		}
+
+		if count > 0 {
+			recordHistory(ctx, h.storage, taskID, &query.From, models.HistoryActionCommentDelete, fmt.Sprintf("%d", count), "")
 		}
 
 		h.answerAlert(ctx, query.ID, l.Edit.CommentsClearedAlert, false)
@@ -1244,6 +1301,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		}
 		_, err := h.storage.AddSubtask(ctx, sess.TaskID, cleanTitle)
 		if err == nil {
+			recordHistory(ctx, h.storage, sess.TaskID, msg.From, models.HistoryActionSubtaskAdd, "", cleanTitle)
 			msgReply := tu.Message(tu.ID(userID), fmt.Sprintf(l.Edit.SubtaskAdded, sess.TaskID, html.EscapeString(cleanTitle))).
 				WithParseMode(telego.ModeHTML).
 				WithReplyMarkup(sanitizeKeyboard(&telego.InlineKeyboardMarkup{
@@ -1270,8 +1328,18 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		if len(runes) > 150 {
 			cleanTitle = string(runes[:150])
 		}
+		oldTitle := ""
+		if t, err := h.storage.GetTask(ctx, sess.TaskID); err == nil && t != nil {
+			for _, s := range t.Subtasks {
+				if s.ID == sess.SubtaskID {
+					oldTitle = s.Title
+					break
+				}
+			}
+		}
 		err := h.storage.UpdateSubtask(ctx, sess.SubtaskID, cleanTitle)
 		if err == nil {
+			recordHistory(ctx, h.storage, sess.TaskID, msg.From, models.HistoryActionSubtaskEdit, oldTitle, cleanTitle)
 			msgReply := tu.Message(tu.ID(userID), fmt.Sprintf(l.Edit.SubtaskUpdated, sess.TaskID, html.EscapeString(cleanTitle))).
 				WithParseMode(telego.ModeHTML).
 				WithReplyMarkup(sanitizeKeyboard(&telego.InlineKeyboardMarkup{
@@ -1300,6 +1368,7 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		}
 		_, err := h.storage.AddComment(ctx, sess.TaskID, userID, authorName, cleanComment)
 		if err == nil {
+			recordHistory(ctx, h.storage, sess.TaskID, msg.From, models.HistoryActionCommentAdd, "", cleanComment)
 			msgReply := tu.Message(tu.ID(userID), fmt.Sprintf(l.Edit.CommentAdded, sess.TaskID)).
 				WithParseMode(telego.ModeHTML).
 				WithReplyMarkup(sanitizeKeyboard(&telego.InlineKeyboardMarkup{
@@ -1322,8 +1391,18 @@ func (h *EditHandler) HandleFSMMessage(ctx context.Context, msg *telego.Message)
 		if len(runes) > 2000 {
 			cleanComment = string(runes[:2000])
 		}
+		oldComment := ""
+		if t, err := h.storage.GetTask(ctx, sess.TaskID); err == nil && t != nil {
+			for _, c := range t.Comments {
+				if c.ID == sess.CommentID {
+					oldComment = c.Text
+					break
+				}
+			}
+		}
 		err := h.storage.UpdateComment(ctx, sess.CommentID, cleanComment)
 		if err == nil {
+			recordHistory(ctx, h.storage, sess.TaskID, msg.From, models.HistoryActionCommentEdit, oldComment, cleanComment)
 			msgReply := tu.Message(tu.ID(userID), fmt.Sprintf(l.Edit.CommentUpdated, sess.TaskID)).
 				WithParseMode(telego.ModeHTML).
 				WithReplyMarkup(sanitizeKeyboard(&telego.InlineKeyboardMarkup{
